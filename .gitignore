@@ -200,3 +200,7 @@ input/17.jpeg
 input/18.jpeg
 input/19.jpeg
 input/20.jpeg
+
+# Ignore output directory's contents
+output/*
+
