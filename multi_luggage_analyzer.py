@@ -419,6 +419,20 @@ class MultiLuggageAnalyzer:
         confidence = min(100, avg_similarity + consistency_bonus)
         return round(confidence, 2)
     
+    def convert_numpy_types(self, obj):
+        """Convert NumPy types to Python native types for JSON serialization."""
+        if isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {key: self.convert_numpy_types(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self.convert_numpy_types(item) for item in obj]
+        return obj
+    
     def generate_detailed_report(self) -> Dict[str, Any]:
         """Generate detailed analysis report."""
         if not self.groups:
@@ -491,6 +505,8 @@ class MultiLuggageAnalyzer:
         
         # Save main report
         report = self.generate_detailed_report()
+        # Convert NumPy types to Python native types for JSON serialization
+        report = self.convert_numpy_types(report)
         report_path = os.path.join(output_dir, f"luggage_analysis_report_{timestamp}.json")
         
         with open(report_path, 'w', encoding='utf-8') as f:
