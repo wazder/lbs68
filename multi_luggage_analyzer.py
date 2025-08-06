@@ -38,6 +38,163 @@ class LuggageFeatureAnalyzer:
             'pink': ([200, 100, 150], [255, 180, 220])
         }
     
+    def calculate_color_histogram(self, image: np.ndarray, mask: Optional[np.ndarray] = None, bins: int = 32) -> np.ndarray:
+        """Calculate color histogram for similarity comparison."""
+        if mask is not None:
+            masked_image = image * np.stack([mask] * 3, axis=-1)
+            pixels = masked_image[mask > 0]
+        else:
+            pixels = image.reshape(-1, 3)
+        
+        if len(pixels) == 0:
+            return np.zeros(bins * 3)
+        
+        # Calculate histogram for each channel
+        hist_r = np.histogram(pixels[:, 0], bins=bins, range=(0, 256))[0]
+        hist_g = np.histogram(pixels[:, 1], bins=bins, range=(0, 256))[0]
+        hist_b = np.histogram(pixels[:, 2], bins=bins, range=(0, 256))[0]
+        
+        # Combine histograms and normalize
+        combined_hist = np.concatenate([hist_r, hist_g, hist_b])
+        return combined_hist / (np.sum(combined_hist) + 1e-8)
+    
+    def normalize_lighting(self, image: np.ndarray, mask: Optional[np.ndarray] = None) -> np.ndarray:
+        """Normalize lighting to reduce impact of illumination changes."""
+        if mask is not None:
+            # Convert to LAB color space for better lighting normalization
+            lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
+            l_channel = lab[:, :, 0]
+            
+            # Apply mask to L channel
+            masked_l = l_channel * mask
+            valid_pixels = masked_l[mask > 0]
+            
+            if len(valid_pixels) > 0:
+                # Normalize L channel
+                mean_l = np.mean(valid_pixels)
+                std_l = np.std(valid_pixels)
+                
+                if std_l > 0:
+                    # Standardize L channel
+                    normalized_l = (l_channel - mean_l) / std_l * 50 + 50
+                    normalized_l = np.clip(normalized_l, 0, 100)
+                    
+                    # Update LAB image
+                    lab[:, :, 0] = normalized_l
+                    
+                    # Convert back to RGB
+                    normalized_image = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+                    return normalized_image
+        
+        return image
+    
+    def compare_color_histograms(self, hist1: np.ndarray, hist2: np.ndarray) -> float:
+        """Compare two color histograms using correlation."""
+        return cv2.compareHist(hist1.astype(np.float32), hist2.astype(np.float32), cv2.HISTCMP_CORREL)
+    
+    def calculate_shape_descriptor(self, mask: Optional[np.ndarray]) -> Dict[str, Any]:
+        """Calculate shape descriptor for similarity comparison."""
+        if mask is None or np.sum(mask > 0) == 0:
+            return {
+                'contour_area': 0,
+                'convex_hull_ratio': 0,
+                'solidity': 0,
+                'extent': 0,
+                'roundness': 0,
+                'aspect_ratio_category': 'unknown'
+            }
+        
+        # Find contours
+        mask_uint8 = (mask * 255).astype(np.uint8)
+        contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
+            return {
+                'contour_area': 0,
+                'convex_hull_ratio': 0,
+                'solidity': 0,
+                'extent': 0,
+                'roundness': 0,
+                'aspect_ratio_category': 'unknown'
+            }
+        
+        # Get largest contour
+        largest_contour = max(contours, key=cv2.contourArea)
+        
+        # Calculate shape features
+        contour_area = cv2.contourArea(largest_contour)
+        
+        if contour_area > 0:
+            # Convex hull
+            hull = cv2.convexHull(largest_contour)
+            hull_area = cv2.contourArea(hull)
+            convex_hull_ratio = contour_area / hull_area if hull_area > 0 else 0
+            
+            # Bounding rectangle
+            x, y, w, h = cv2.boundingRect(largest_contour)
+            rect_area = w * h
+            extent = contour_area / rect_area if rect_area > 0 else 0
+            
+            # Solidity
+            solidity = contour_area / hull_area if hull_area > 0 else 0
+            
+            # Roundness (4π*area / perimeter²)
+            perimeter = cv2.arcLength(largest_contour, True)
+            roundness = (4 * np.pi * contour_area) / (perimeter * perimeter) if perimeter > 0 else 0
+            
+            # Aspect ratio category
+            aspect_ratio = w / h if h > 0 else 0
+            if aspect_ratio > 1.8:
+                ar_category = 'very_wide'
+            elif aspect_ratio > 1.3:
+                ar_category = 'wide'
+            elif aspect_ratio > 0.7:
+                ar_category = 'balanced'
+            elif aspect_ratio > 0.5:
+                ar_category = 'tall'
+            else:
+                ar_category = 'very_tall'
+        else:
+            convex_hull_ratio = extent = solidity = roundness = 0
+            ar_category = 'unknown'
+        
+        return {
+            'contour_area': int(contour_area),
+            'convex_hull_ratio': round(convex_hull_ratio, 3),
+            'solidity': round(solidity, 3),
+            'extent': round(extent, 3),
+            'roundness': round(roundness, 3),
+            'aspect_ratio_category': ar_category
+        }
+    
+    def compare_shape_descriptors(self, desc1: Dict[str, Any], desc2: Dict[str, Any]) -> float:
+        """Compare two shape descriptors and return similarity (0-1)."""
+        if not desc1 or not desc2:
+            return 0.0
+        
+        # Compare numerical features
+        numerical_features = ['convex_hull_ratio', 'solidity', 'extent', 'roundness']
+        similarities = []
+        
+        for feature in numerical_features:
+            val1 = desc1.get(feature, 0)
+            val2 = desc2.get(feature, 0)
+            
+            if val1 == 0 and val2 == 0:
+                similarity = 1.0
+            else:
+                max_val = max(val1, val2)
+                min_val = min(val1, val2)
+                similarity = min_val / max_val if max_val > 0 else 0
+            
+            similarities.append(similarity)
+        
+        # Compare aspect ratio category
+        ar_similarity = 1.0 if desc1.get('aspect_ratio_category') == desc2.get('aspect_ratio_category') else 0.5
+        similarities.append(ar_similarity)
+        
+        return np.mean(similarities)
+
     def analyze_color(self, image: np.ndarray, mask: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """Analyze luggage color."""
         if mask is not None:
@@ -79,10 +236,19 @@ class LuggageFeatureAnalyzer:
             if percentage > 5:  # Colors above 5%
                 color_counts[color_name] = round(percentage, 1)
         
+        # Calculate color histogram for similarity comparison
+        color_histogram = self.calculate_color_histogram(image, mask)
+        
+        # Normalize lighting for more robust color analysis
+        normalized_image = self.normalize_lighting(image, mask)
+        normalized_histogram = self.calculate_color_histogram(normalized_image, mask)
+        
         return {
             'dominant_color': closest_color,
             'mean_rgb': mean_color.tolist(),
-            'color_distribution': color_counts
+            'color_distribution': color_counts,
+            'color_histogram': color_histogram,
+            'normalized_histogram': normalized_histogram
         }
     
     def analyze_size(self, mask: np.ndarray) -> Dict[str, Any]:
@@ -117,13 +283,17 @@ class LuggageFeatureAnalyzer:
         else:
             bbox_height = bbox_width = aspect_ratio = 0
         
+        # Calculate shape descriptor
+        shape_descriptor = self.calculate_shape_descriptor(mask)
+        
         return {
             'size_category': size_category,
             'pixel_area': int(pixel_area),
             'area_ratio': round(area_ratio, 3),
             'bbox_height': int(bbox_height),
             'bbox_width': int(bbox_width),
-            'aspect_ratio': round(aspect_ratio, 2)
+            'aspect_ratio': round(aspect_ratio, 2),
+            'shape_descriptor': shape_descriptor
         }
     
     def analyze_texture(self, image: np.ndarray, mask: Optional[np.ndarray] = None) -> Dict[str, Any]:
@@ -219,11 +389,19 @@ class MultiLuggageAnalyzer:
     def __init__(self, similarity_threshold: float = 85.0):
         """
         Args:
-            similarity_threshold: Threshold for considering luggage as same (%)
+            similarity_threshold: Main threshold for considering luggage as same (%)
         """
         self.comparator = LuggageComparator()
         self.feature_analyzer = LuggageFeatureAnalyzer()
         self.similarity_threshold = similarity_threshold
+        
+        # Dynamic thresholds for different similarity types
+        self.thresholds = {
+            'strict': similarity_threshold,              # 85% - strict matching
+            'color_robust': similarity_threshold - 10,   # 75% - when colors might vary due to lighting
+            'shape_based': similarity_threshold - 15,    # 70% - when shape is primary indicator
+            'fallback': similarity_threshold - 20        # 65% - fallback for difficult cases
+        }
         
         self.processed_images = {}
         self.similarity_matrix = None
@@ -243,7 +421,7 @@ class MultiLuggageAnalyzer:
                 image = self.comparator.load_image(image_path)
                 
                 # STEP 1: Detect if this is luggage
-                luggage_detection = self.comparator.detect_luggage(image, threshold=0.5)
+                luggage_detection = self.comparator.detect_luggage(image, threshold=0.7)
                 
                 if not luggage_detection['is_luggage']:
                     print(f"⚠ Skipped (not luggage): {os.path.basename(image_path)} - {luggage_detection['reason']}")
@@ -288,32 +466,133 @@ class MultiLuggageAnalyzer:
         print(f"Total processed: {len(self.processed_images)} photos")
         return self.processed_images
     
+    def calculate_multi_level_similarity(self, img1_id: str, img2_id: str) -> Dict[str, float]:
+        """Calculate multi-level similarity between two images."""
+        img1_data = self.processed_images[img1_id]
+        img2_data = self.processed_images[img2_id]
+        
+        # 1. CLIP embedding similarity (main similarity)
+        embedding1 = img1_data['embedding']
+        embedding2 = img2_data['embedding']
+        clip_similarity = cosine_similarity([embedding1], [embedding2])[0][0]
+        clip_percentage = (clip_similarity + 1) / 2 * 100
+        
+        # 2. Color histogram similarity
+        hist1 = img1_data['features']['color'].get('normalized_histogram', np.array([]))
+        hist2 = img2_data['features']['color'].get('normalized_histogram', np.array([]))
+        
+        if len(hist1) > 0 and len(hist2) > 0:
+            color_similarity = self.feature_analyzer.compare_color_histograms(hist1, hist2)
+            color_percentage = max(0, color_similarity * 100)  # Convert correlation to percentage
+        else:
+            color_percentage = 0
+        
+        # 3. Shape similarity
+        shape1 = img1_data['features']['size'].get('shape_descriptor', {})
+        shape2 = img2_data['features']['size'].get('shape_descriptor', {})
+        shape_similarity = self.feature_analyzer.compare_shape_descriptors(shape1, shape2)
+        shape_percentage = shape_similarity * 100
+        
+        # 4. Texture similarity (based on smoothness)
+        smooth1 = img1_data['features']['texture'].get('smoothness', 0)
+        smooth2 = img2_data['features']['texture'].get('smoothness', 0)
+        
+        if smooth1 > 0 and smooth2 > 0:
+            max_smooth = max(smooth1, smooth2)
+            min_smooth = min(smooth1, smooth2)
+            texture_similarity = min_smooth / max_smooth
+            texture_percentage = texture_similarity * 100
+        else:
+            texture_percentage = 0
+        
+        return {
+            'clip_similarity': round(clip_percentage, 2),
+            'color_similarity': round(color_percentage, 2),
+            'shape_similarity': round(shape_percentage, 2),
+            'texture_similarity': round(texture_percentage, 2)
+        }
+    
+    def calculate_combined_similarity(self, similarities: Dict[str, float]) -> float:
+        """Calculate weighted combined similarity score."""
+        # Weights for different similarity types
+        weights = {
+            'clip_similarity': 0.5,    # Main visual similarity
+            'color_similarity': 0.2,   # Color consistency
+            'shape_similarity': 0.2,   # Shape consistency
+            'texture_similarity': 0.1  # Texture consistency
+        }
+        
+        combined_score = 0
+        total_weight = 0
+        
+        for sim_type, weight in weights.items():
+            if sim_type in similarities and similarities[sim_type] > 0:
+                combined_score += similarities[sim_type] * weight
+                total_weight += weight
+        
+        return combined_score / total_weight if total_weight > 0 else 0
+    
+    def determine_matching_threshold(self, img1_id: str, img2_id: str, similarities: Dict[str, float]) -> Tuple[str, float]:
+        """Determine which threshold to use based on similarity characteristics."""
+        img1_data = self.processed_images[img1_id]
+        img2_data = self.processed_images[img2_id]
+        
+        # Check if colors are very different (might indicate lighting differences)
+        color1 = img1_data['features']['color']['dominant_color']
+        color2 = img2_data['features']['color']['dominant_color']
+        
+        # Check if shapes are very similar even if colors differ
+        shape_sim = similarities.get('shape_similarity', 0)
+        color_sim = similarities.get('color_similarity', 0)
+        clip_sim = similarities.get('clip_similarity', 0)
+        
+        # Decision logic for threshold selection
+        if clip_sim >= self.thresholds['strict']:
+            return 'strict', self.thresholds['strict']
+        
+        elif shape_sim >= 80 and color1 != color2:
+            # Same shape, different color -> likely lighting issue
+            return 'color_robust', self.thresholds['color_robust']
+        
+        elif shape_sim >= 85:
+            # Very similar shapes
+            return 'shape_based', self.thresholds['shape_based']
+        
+        elif (shape_sim >= 70 and clip_sim >= 65) or (color_sim >= 70 and clip_sim >= 65):
+            # Moderate similarity in multiple dimensions
+            return 'fallback', self.thresholds['fallback']
+        
+        else:
+            return 'strict', self.thresholds['strict']
+
     def calculate_similarity_matrix(self) -> np.ndarray:
-        """Calculate similarity matrix between all photos."""
+        """Calculate multi-level similarity matrix between all photos."""
         image_ids = list(self.processed_images.keys())
         n = len(image_ids)
         
         if n == 0:
             return np.array([])
         
-        # Get embeddings
-        embeddings = []
-        for img_id in image_ids:
-            embeddings.append(self.processed_images[img_id]['embedding'])
+        # Initialize similarity matrix
+        similarity_matrix = np.zeros((n, n))
         
-        embeddings = np.array(embeddings)
+        # Calculate similarities
+        print("Calculating multi-level similarities...")
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    similarity_matrix[i][j] = 100.0  # Same image
+                elif i < j:  # Calculate only upper triangle
+                    similarities = self.calculate_multi_level_similarity(image_ids[i], image_ids[j])
+                    combined_sim = self.calculate_combined_similarity(similarities)
+                    similarity_matrix[i][j] = combined_sim
+                    similarity_matrix[j][i] = combined_sim  # Symmetric matrix
         
-        # Calculate cosine similarity
-        similarity_matrix = cosine_similarity(embeddings)
-        
-        # Convert [-1,1] range to [0,100] percentage
-        similarity_percentage = (similarity_matrix + 1) / 2 * 100
-        
-        self.similarity_matrix = similarity_percentage
-        return similarity_percentage
+        self.similarity_matrix = similarity_matrix
+        return similarity_matrix
     
     def group_similar_luggage(self) -> List[Dict[str, Any]]:
-        """Group similar luggage."""
+        """Group similar luggage using two-phase matching."""
         if self.similarity_matrix is None:
             self.calculate_similarity_matrix()
         
@@ -323,10 +602,34 @@ class MultiLuggageAnalyzer:
         image_ids = list(self.processed_images.keys())
         n = len(image_ids)
         
-        # Apply threshold for grouping
-        similarity_binary = (self.similarity_matrix >= self.similarity_threshold).astype(int)
+        print("Starting two-phase grouping...")
         
-        # Simple grouping algorithm
+        # PHASE 1: Strict grouping
+        print("Phase 1: Strict grouping...")
+        groups_phase1 = self._group_with_strict_threshold(image_ids)
+        
+        # PHASE 2: Relaxed grouping for remaining images
+        print("Phase 2: Relaxed grouping for remaining items...")
+        grouped_ids_phase1 = set()
+        for group in groups_phase1:
+            grouped_ids_phase1.update(group['images'])
+        
+        remaining_ids = [img_id for img_id in image_ids if img_id not in grouped_ids_phase1]
+        groups_phase2 = self._group_with_dynamic_thresholds(remaining_ids, grouped_ids_phase1)
+        
+        # Combine results
+        all_groups = groups_phase1 + groups_phase2
+        
+        # Renumber groups
+        for i, group in enumerate(all_groups, 1):
+            group['group_id'] = i
+        
+        self.groups = all_groups
+        print(f"Grouping complete: {len(groups_phase1)} strict groups + {len(groups_phase2)} relaxed groups")
+        return all_groups
+    
+    def _group_with_strict_threshold(self, image_ids: List[str]) -> List[Dict[str, Any]]:
+        """Phase 1: Group with strict threshold."""
         visited = set()
         groups = []
         
@@ -334,34 +637,87 @@ class MultiLuggageAnalyzer:
             if img_id in visited:
                 continue
             
-            # Start new group
             group = {
                 'group_id': len(groups) + 1,
                 'images': [img_id],
                 'similarities': {},
                 'common_features': {},
-                'confidence': 0.0
+                'confidence': 0.0,
+                'matching_type': 'strict'
             }
             
             visited.add(img_id)
             
-            # Find other images similar to this one
+            # Find other images similar to this one using strict threshold
             for j, other_img_id in enumerate(image_ids):
                 if i != j and other_img_id not in visited:
                     similarity = self.similarity_matrix[i][j]
-                    if similarity >= self.similarity_threshold:
+                    if similarity >= self.thresholds['strict']:
                         group['images'].append(other_img_id)
                         group['similarities'][other_img_id] = round(similarity, 2)
                         visited.add(other_img_id)
             
-            # Calculate group features
+            # Only keep groups with more than 1 image
             if len(group['images']) > 1:
                 group['common_features'] = self._analyze_group_features(group['images'])
                 group['confidence'] = self._calculate_group_confidence(group['images'])
                 group['explanation'] = self._generate_group_explanation(group)
                 groups.append(group)
         
-        self.groups = groups
+        return groups
+    
+    def _group_with_dynamic_thresholds(self, remaining_ids: List[str], already_grouped: set) -> List[Dict[str, Any]]:
+        """Phase 2: Group remaining images with dynamic thresholds."""
+        if not remaining_ids:
+            return []
+        
+        visited = set()
+        groups = []
+        
+        for i, img_id in enumerate(remaining_ids):
+            if img_id in visited:
+                continue
+            
+            group = {
+                'group_id': len(groups) + 1,
+                'images': [img_id],
+                'similarities': {},
+                'detailed_similarities': {},
+                'common_features': {},
+                'confidence': 0.0,
+                'matching_type': 'dynamic'
+            }
+            
+            visited.add(img_id)
+            
+            # Find other images using dynamic thresholds
+            for j, other_img_id in enumerate(remaining_ids):
+                if i != j and other_img_id not in visited:
+                    # Calculate detailed similarities
+                    similarities = self.calculate_multi_level_similarity(img_id, other_img_id)
+                    combined_sim = self.calculate_combined_similarity(similarities)
+                    
+                    # Determine appropriate threshold
+                    threshold_type, threshold_value = self.determine_matching_threshold(img_id, other_img_id, similarities)
+                    
+                    if combined_sim >= threshold_value:
+                        group['images'].append(other_img_id)
+                        group['similarities'][other_img_id] = round(combined_sim, 2)
+                        group['detailed_similarities'][other_img_id] = {
+                            'combined': round(combined_sim, 2),
+                            'threshold_used': threshold_type,
+                            'threshold_value': threshold_value,
+                            'breakdown': similarities
+                        }
+                        visited.add(other_img_id)
+            
+            # Only keep groups with more than 1 image
+            if len(group['images']) > 1:
+                group['common_features'] = self._analyze_group_features(group['images'])
+                group['confidence'] = self._calculate_group_confidence(group['images'])
+                group['explanation'] = self._generate_group_explanation(group)
+                groups.append(group)
+        
         return groups
     
     def _analyze_group_features(self, image_ids: List[str]) -> Dict[str, Any]:
@@ -451,11 +807,20 @@ class MultiLuggageAnalyzer:
         
         explanations = []
         common_features = group['common_features']
+        matching_type = group.get('matching_type', 'unknown')
+        
+        # Add matching type explanation
+        if matching_type == 'strict':
+            explanations.append(f"Matched with strict threshold ({self.thresholds['strict']}%)")
+        elif matching_type == 'dynamic':
+            explanations.append("Matched with dynamic thresholds (adaptive similarity detection)")
         
         # Color similarity
         if common_features.get('color_consistency', False):
             color = common_features.get('dominant_color', 'unknown')
             explanations.append(f"Same color: {color}")
+        elif matching_type == 'dynamic':
+            explanations.append("Color differences compensated by lighting normalization")
         
         # Size similarity  
         if common_features.get('size_consistency', False):
@@ -477,7 +842,19 @@ class MultiLuggageAnalyzer:
         if similarities:
             avg_sim = sum(similarities) / len(similarities)
             max_sim = max(similarities)
-            explanations.append(f"High visual similarity: {avg_sim:.1f}% average, {max_sim:.1f}% maximum")
+            explanations.append(f"Visual similarity: {avg_sim:.1f}% average, {max_sim:.1f}% maximum")
+        
+        # Detailed similarity breakdown for dynamic matching
+        if matching_type == 'dynamic' and 'detailed_similarities' in group:
+            for img_id, details in group['detailed_similarities'].items():
+                breakdown = details['breakdown']
+                threshold_used = details['threshold_used']
+                explanations.append(f"Advanced analysis used {threshold_used} threshold:")
+                explanations.append(f"  - CLIP: {breakdown.get('clip_similarity', 0):.1f}%")
+                explanations.append(f"  - Color: {breakdown.get('color_similarity', 0):.1f}%") 
+                explanations.append(f"  - Shape: {breakdown.get('shape_similarity', 0):.1f}%")
+                explanations.append(f"  - Texture: {breakdown.get('texture_similarity', 0):.1f}%")
+                break  # Just show one example
         
         # CLIP detection consistency
         detection_types = []
@@ -495,9 +872,10 @@ class MultiLuggageAnalyzer:
                 explanations.append(f"Detected as similar object type: {most_common[0]}")
         
         return {
-            'reason': 'Items grouped due to multiple similarity factors',
+            'reason': f'Items grouped using {matching_type} matching with multiple similarity factors',
             'details': explanations,
-            'similarity_scores': group['similarities']
+            'similarity_scores': group['similarities'],
+            'matching_approach': matching_type
         }
     
     def generate_detailed_report(self) -> Dict[str, Any]:
@@ -663,14 +1041,14 @@ def main():
     
     if not image_paths:
         print("Usage example:")
-        print("analyzer = MultiLuggageAnalyzer(similarity_threshold=75.0)")
+        print("analyzer = MultiLuggageAnalyzer(similarity_threshold=85.0)")
         print("analyzer.process_images(['photo1.jpg', 'photo2.jpg', ...])")
         print("analyzer.group_similar_luggage()")
         print("results = analyzer.save_results()")
         return
     
     # Start analysis system
-    analyzer = MultiLuggageAnalyzer(similarity_threshold=75.0)
+    analyzer = MultiLuggageAnalyzer(similarity_threshold=85.0)
     
     # Process photos
     analyzer.process_images(image_paths)

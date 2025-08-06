@@ -265,7 +265,10 @@ class LuggageComparator:
             # Define text prompts for classification
             luggage_prompts = [
                 "a photo of a suitcase",
-                "a photo of a luggage bag", 
+                "a photo of a hard shell suitcase", 
+                "a photo of a travel suitcase",
+                "a photo of a rolling suitcase",
+                "a photo of a luggage bag",
                 "a photo of a travel bag",
                 "a photo of a backpack",
                 "a photo of a duffel bag",
@@ -273,6 +276,10 @@ class LuggageComparator:
             ]
             
             non_luggage_prompts = [
+                "a photo of a cardboard box",
+                "a photo of a box with bags on it",
+                "a photo of a storage box",
+                "a photo of a package",
                 "a photo of a person",
                 "a photo of a wall",
                 "a photo of a floor", 
@@ -280,7 +287,8 @@ class LuggageComparator:
                 "a photo of a room",
                 "a photo of random objects",
                 "a photo of clothing",
-                "a photo of electronics"
+                "a photo of electronics",
+                "a photo of household items"
             ]
             
             all_prompts = luggage_prompts + non_luggage_prompts

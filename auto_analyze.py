@@ -247,8 +247,8 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Auto-analyze luggage photos from input folder")
-    parser.add_argument("--threshold", "-t", type=float, default=75.0, 
-                       help="Similarity threshold (0-100, default: 75)")
+    parser.add_argument("--threshold", "-t", type=float, default=85.0, 
+                       help="Similarity threshold (0-100, default: 85.0)")
     parser.add_argument("--input", "-i", default="input", 
                        help="Input folder name (default: input)")
     parser.add_argument("--output", "-o", default="output", 
