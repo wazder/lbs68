@@ -550,8 +550,8 @@ class MultiLuggageAnalyzer:
         if clip_sim >= self.thresholds['strict']:
             return 'strict', self.thresholds['strict']
         
-        elif shape_sim >= 80 and color1 != color2:
-            # Same shape, different color -> likely lighting issue
+        elif shape_sim >= 80 and color1 != color2 and self._is_compatible_color_difference(color1, color2):
+            # Same shape, different color -> likely lighting issue (but only for compatible colors)
             return 'color_robust', self.thresholds['color_robust']
         
         elif shape_sim >= 85:
@@ -564,6 +564,36 @@ class MultiLuggageAnalyzer:
         
         else:
             return 'strict', self.thresholds['strict']
+    
+    def _is_compatible_color_difference(self, color1: str, color2: str) -> bool:
+        """Check if two colors are compatible (likely due to lighting differences)."""
+        # Define compatible color groups that might be confused due to lighting
+        compatible_groups = [
+            {'black', 'gray', 'brown'},  # Dark colors that might look similar under different lighting
+            {'gray', 'white'},           # Light colors
+            {'brown', 'orange'},         # Warm tones
+            {'blue', 'navy'},           # Blue tones
+            {'purple', 'pink'}          # Purple tones
+        ]
+        
+        # Check if both colors are in the same compatible group
+        for group in compatible_groups:
+            if color1 in group and color2 in group:
+                return True
+        
+        # Never allow very different colors to be considered compatible
+        incompatible_pairs = [
+            ('pink', 'black'), ('pink', 'gray'), ('pink', 'brown'),
+            ('red', 'blue'), ('red', 'green'), 
+            ('yellow', 'black'), ('yellow', 'blue'),
+            ('orange', 'blue'), ('orange', 'green')
+        ]
+        
+        color_pair = (color1, color2) if color1 < color2 else (color2, color1)
+        if color_pair in incompatible_pairs:
+            return False
+        
+        return False  # Default to strict matching for unlisted combinations
 
     def calculate_similarity_matrix(self) -> np.ndarray:
         """Calculate multi-level similarity matrix between all photos."""
@@ -653,9 +683,17 @@ class MultiLuggageAnalyzer:
                 if i != j and other_img_id not in visited:
                     similarity = self.similarity_matrix[i][j]
                     if similarity >= self.thresholds['strict']:
-                        group['images'].append(other_img_id)
-                        group['similarities'][other_img_id] = round(similarity, 2)
-                        visited.add(other_img_id)
+                        # Additional color compatibility check for strict grouping
+                        img1_color = self.processed_images[img_id]['features']['color']['dominant_color']
+                        img2_color = self.processed_images[other_img_id]['features']['color']['dominant_color']
+                        
+                        # Only group if colors are compatible OR very high similarity
+                        if (img1_color == img2_color or 
+                            self._is_compatible_color_difference(img1_color, img2_color) or 
+                            similarity >= 85):
+                            group['images'].append(other_img_id)
+                            group['similarities'][other_img_id] = round(similarity, 2)
+                            visited.add(other_img_id)
             
             # Only keep groups with more than 1 image
             if len(group['images']) > 1:
