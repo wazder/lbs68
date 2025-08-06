@@ -179,3 +179,24 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+# Ignoring input images for luggage analysis
+input/01.jpeg
+input/02.jpeg
+input/03.jpeg
+input/04.jpeg
+input/05.jpeg
+input/06.jpeg
+input/07.jpeg
+input/08.jpeg
+input/09.jpeg
+input/10.jpeg
+input/11.jpeg
+input/12.jpeg
+input/13.jpeg
+input/14.jpeg
+input/15.jpeg
+input/16.jpeg
+input/17.jpeg
+input/18.jpeg
+input/19.jpeg
+input/20.jpeg
