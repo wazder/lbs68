@@ -26,7 +26,7 @@ class AutoLuggageAnalyzer:
     def __init__(self, 
                  input_folder: str = "input", 
                  output_folder: str = "output",
-                 similarity_threshold: float = 75.0):
+                 similarity_threshold: float = 85.0):
         self.input_folder = Path(input_folder)
         self.output_folder = Path(output_folder)
         self.similarity_threshold = similarity_threshold
@@ -112,11 +112,18 @@ class AutoLuggageAnalyzer:
                         img_name = Path(img_path).name
                         f.write(f"  - {img_name}\n")
                     
-                    # Similarity details
+                    # Similarity details and explanation
                     if group['similarities']:
                         max_sim = max(group['similarities'].values())
                         min_sim = min(group['similarities'].values())
                         f.write(f"\nSimilarity Range: {min_sim}% - {max_sim}%\n")
+                    
+                    # Why are they grouped together?
+                    if 'explanation' in group:
+                        explanation = group['explanation']
+                        f.write(f"\nWhy grouped together:\n")
+                        for detail in explanation.get('details', []):
+                            f.write(f"  - {detail}\n")
                     
                     f.write("\n" + "="*50 + "\n\n")
                 
@@ -166,6 +173,8 @@ class AutoLuggageAnalyzer:
             return False
         
         print(f"\nStarting analysis (threshold: {self.similarity_threshold}%)...")
+        print("STEP 1: Detecting luggage items...")
+        print("STEP 2: Grouping similar luggage...")
         
         # Create analyzer
         analyzer = MultiLuggageAnalyzer(similarity_threshold=self.similarity_threshold)

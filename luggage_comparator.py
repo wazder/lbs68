@@ -13,11 +13,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 try:
-    from segment_anything import SamModel, SamPredictor, sam_model_registry
+    from segment_anything import SamPredictor, sam_model_registry
     SAM_AVAILABLE = True
 except ImportError:
     SAM_AVAILABLE = False
-    print("Warning: segment-anything not available. Install with: pip install segment-anything")
+    print("Warning: segment-anything not available. Install with: pip install git+https://github.com/facebookresearch/segment-anything.git")
 
 try:
     from transformers import CLIPProcessor, CLIPModel
@@ -243,6 +243,97 @@ class LuggageComparator:
             embedding = image_features / image_features.norm(dim=-1, keepdim=True)
         
         return embedding.cpu().numpy().flatten()
+    
+    def detect_luggage(self, image: np.ndarray, threshold: float = 0.6) -> Dict[str, Any]:
+        """
+        Detect if image contains luggage using CLIP text classification.
+        
+        Args:
+            image: Input image as numpy array
+            threshold: Classification threshold (0-1)
+            
+        Returns:
+            Dictionary with detection results
+        """
+        if self.clip_model is None or self.clip_processor is None:
+            return {'is_luggage': True, 'confidence': 0.0, 'reason': 'CLIP not available, assuming luggage'}
+        
+        try:
+            # Convert numpy array to PIL Image
+            pil_image = Image.fromarray(image)
+            
+            # Define text prompts for classification
+            luggage_prompts = [
+                "a photo of a suitcase",
+                "a photo of a luggage bag", 
+                "a photo of a travel bag",
+                "a photo of a backpack",
+                "a photo of a duffel bag",
+                "a photo of a trolley bag"
+            ]
+            
+            non_luggage_prompts = [
+                "a photo of a person",
+                "a photo of a wall",
+                "a photo of a floor", 
+                "a photo of furniture",
+                "a photo of a room",
+                "a photo of random objects",
+                "a photo of clothing",
+                "a photo of electronics"
+            ]
+            
+            all_prompts = luggage_prompts + non_luggage_prompts
+            
+            # Process image and text
+            inputs = self.clip_processor(
+                text=all_prompts, 
+                images=pil_image, 
+                return_tensors="pt", 
+                padding=True
+            )
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            # Get predictions
+            with torch.no_grad():
+                outputs = self.clip_model(**inputs)
+                logits_per_image = outputs.logits_per_image
+                probs = torch.softmax(logits_per_image, dim=-1)
+            
+            # Calculate luggage vs non-luggage scores
+            luggage_probs = probs[0][:len(luggage_prompts)]
+            non_luggage_probs = probs[0][len(luggage_prompts):]
+            
+            luggage_score = float(torch.sum(luggage_probs))
+            non_luggage_score = float(torch.sum(non_luggage_probs))
+            
+            # Normalize scores
+            total_score = luggage_score + non_luggage_score
+            if total_score > 0:
+                luggage_confidence = luggage_score / total_score
+            else:
+                luggage_confidence = 0.5
+            
+            is_luggage = luggage_confidence >= threshold
+            
+            # Find best matching prompt for explanation
+            best_prompt_idx = torch.argmax(probs[0])
+            best_prompt = all_prompts[best_prompt_idx]
+            best_confidence = float(probs[0][best_prompt_idx])
+            
+            return {
+                'is_luggage': is_luggage,
+                'confidence': round(luggage_confidence, 3),
+                'luggage_score': round(luggage_score, 3),
+                'non_luggage_score': round(non_luggage_score, 3),
+                'best_match': best_prompt,
+                'best_match_confidence': round(best_confidence, 3),
+                'reason': f"Best match: '{best_prompt}' ({best_confidence:.1%})"
+            }
+            
+        except Exception as e:
+            print(f"Warning: Luggage detection failed: {e}")
+            return {'is_luggage': True, 'confidence': 0.0, 'reason': f'Detection error: {e}'}
     
     def process_image(
         self, 

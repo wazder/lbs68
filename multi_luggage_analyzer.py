@@ -216,7 +216,7 @@ class LuggageFeatureAnalyzer:
 class MultiLuggageAnalyzer:
     """Main class for analyzing multiple luggage photos."""
     
-    def __init__(self, similarity_threshold: float = 75.0):
+    def __init__(self, similarity_threshold: float = 85.0):
         """
         Args:
             similarity_threshold: Threshold for considering luggage as same (%)
@@ -242,6 +242,15 @@ class MultiLuggageAnalyzer:
                 # Load image
                 image = self.comparator.load_image(image_path)
                 
+                # STEP 1: Detect if this is luggage
+                luggage_detection = self.comparator.detect_luggage(image, threshold=0.5)
+                
+                if not luggage_detection['is_luggage']:
+                    print(f"⚠ Skipped (not luggage): {os.path.basename(image_path)} - {luggage_detection['reason']}")
+                    continue
+                
+                print(f"✓ Luggage detected: {os.path.basename(image_path)} (confidence: {luggage_detection['confidence']:.1%})")
+                
                 # SAM segmentation
                 mask = None
                 if self.comparator.sam_predictor is not None:
@@ -261,6 +270,7 @@ class MultiLuggageAnalyzer:
                 self.processed_images[image_id] = {
                     'path': image_path,
                     'embedding': embedding,
+                    'luggage_detection': luggage_detection,
                     'features': {
                         'color': color_features,
                         'size': size_features,
@@ -348,6 +358,7 @@ class MultiLuggageAnalyzer:
             if len(group['images']) > 1:
                 group['common_features'] = self._analyze_group_features(group['images'])
                 group['confidence'] = self._calculate_group_confidence(group['images'])
+                group['explanation'] = self._generate_group_explanation(group)
                 groups.append(group)
         
         self.groups = groups
@@ -432,6 +443,62 @@ class MultiLuggageAnalyzer:
         elif isinstance(obj, list):
             return [self.convert_numpy_types(item) for item in obj]
         return obj
+    
+    def _generate_group_explanation(self, group: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate explanation for why items are grouped together."""
+        if len(group['images']) < 2:
+            return {'reason': 'Single item group', 'details': []}
+        
+        explanations = []
+        common_features = group['common_features']
+        
+        # Color similarity
+        if common_features.get('color_consistency', False):
+            color = common_features.get('dominant_color', 'unknown')
+            explanations.append(f"Same color: {color}")
+        
+        # Size similarity  
+        if common_features.get('size_consistency', False):
+            size = common_features.get('size_category', 'unknown')
+            explanations.append(f"Same size category: {size}")
+        
+        # Texture similarity
+        if common_features.get('texture_consistency', False):
+            texture = common_features.get('texture_type', 'unknown')
+            explanations.append(f"Same texture: {texture}")
+        
+        # Material similarity
+        if common_features.get('material_consistency', False):
+            material = common_features.get('material_type', 'unknown')
+            explanations.append(f"Same material: {material}")
+        
+        # Visual similarity
+        similarities = list(group['similarities'].values())
+        if similarities:
+            avg_sim = sum(similarities) / len(similarities)
+            max_sim = max(similarities)
+            explanations.append(f"High visual similarity: {avg_sim:.1f}% average, {max_sim:.1f}% maximum")
+        
+        # CLIP detection consistency
+        detection_types = []
+        for img_id in group['images']:
+            detection = self.processed_images[img_id].get('luggage_detection', {})
+            best_match = detection.get('best_match', '')
+            if best_match:
+                detection_types.append(best_match)
+        
+        if detection_types:
+            # Find most common detection type
+            detection_counter = Counter(detection_types)
+            most_common = detection_counter.most_common(1)[0]
+            if most_common[1] > 1:  # If more than one image has this detection
+                explanations.append(f"Detected as similar object type: {most_common[0]}")
+        
+        return {
+            'reason': 'Items grouped due to multiple similarity factors',
+            'details': explanations,
+            'similarity_scores': group['similarities']
+        }
     
     def generate_detailed_report(self) -> Dict[str, Any]:
         """Generate detailed analysis report."""
