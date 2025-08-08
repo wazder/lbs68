@@ -28,13 +28,15 @@ class ModelConfig:
 
 @dataclass
 class ProcessingConfig:
-    """Configuration for processing settings."""
-    similarity_threshold: float = 75.0
-    luggage_detection_threshold: float = 0.7
+    """Configuration for ultra-precision processing settings."""
+    similarity_threshold: float = 95.0  # Ultra-precise default
+    luggage_detection_threshold: float = 0.8  # Higher precision
     batch_size: int = 1
     max_image_size: int = 2048
     enable_segmentation: bool = True
     enable_feature_analysis: bool = True
+    enable_geometric_verification: bool = True  # Always on
+    enable_ensemble_voting: bool = True  # Always on
 
 
 @dataclass

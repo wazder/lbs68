@@ -284,11 +284,7 @@ Examples:
         help="Don't save report, only print to console"
     )
     
-    parser.add_argument(
-        "--ultra-precise",
-        action="store_true", 
-        help="Enable ultra-precise mode (3-5x slower but maximum accuracy)"
-    )
+# Ultra-precise mode is now the default - no flag needed
     
     args = parser.parse_args()
     
