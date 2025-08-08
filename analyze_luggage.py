@@ -1,391 +1,193 @@
 #!/usr/bin/env python3
 """
-Luggage Photo Analysis and Grouping - Easy Usage Script
-
-This script allows you to analyze multiple luggage photos,
-group those belonging to the same luggage, and get detailed reports.
-
-Usage:
-python analyze_luggage.py --folder /path/to/photos --threshold 75
-python analyze_luggage.py --files photo1.jpg photo2.jpg photo3.jpg
+Luggage Analysis with Manual Grouping Integration
+Manuel gruplandırmayı sistem sonuçlarıyla birleştirir
 """
 
 import os
-import argparse
 import sys
-from pathlib import Path
+import argparse
+import logging
+from datetime import datetime
+from typing import List, Dict, Any
+
+# Add current directory to path for imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from multi_luggage_analyzer import MultiLuggageAnalyzer
-from utils import setup_logging, validate_directory, get_image_files, validate_image_file
-from config import get_config_manager, get_config
+from manual_grouping import ManualGroupingAnalyzer
+from utils import get_image_files, setup_logging
 
-# Initialize config first
-config_manager = get_config_manager()
-config = get_config()
-
-# Setup logging based on config
-logger = setup_logging(
-    level=config.logging.level,
-    log_file=config.logging.log_file if config.logging.enable_file_logging else None,
-    format_string=config.logging.log_format
-)
-
-
-def get_image_files_with_validation(folder_path: str) -> list:
-    """Find and validate all image files in the folder."""
-    logger.info(f"Searching for images in: {folder_path}")
+def analyze_with_manual_integration(folder_path: str, threshold: float = 65.0, output_dir: str = "output") -> Dict[str, Any]:
+    """Manuel gruplandırmayı sistem analiziyle birleştir."""
     
-    if not validate_directory(folder_path):
-        logger.error(f"Directory not found or not accessible: {folder_path}")
-        return []
+    print("🔧 MANUEL GRUPLANDIRMA ENTEGRASYONU BAŞLIYOR...")
     
-    # Use utility function that validates images
+    # Input klasöründeki fotoğrafları al
     image_files = get_image_files(folder_path)
+    image_paths = [str(f) for f in image_files]
     
-    if not image_files:
-        logger.warning(f"No valid image files found in {folder_path}")
-        return []
+    print(f"📁 {len(image_paths)} fotoğraf bulundu")
     
-    logger.info(f"Found {len(image_files)} valid image files")
-    for img_file in image_files:
-        logger.debug(f"Valid image: {Path(img_file).name}")
+    # Manuel gruplandırma
+    manual_analyzer = ManualGroupingAnalyzer()
+    manual_results = manual_analyzer.analyze_with_manual_groups(image_paths, threshold)
     
-    return [str(f) for f in image_files]
+    # Sistem analizi
+    system_analyzer = MultiLuggageAnalyzer(similarity_threshold=threshold)
+    system_analyzer.process_images(image_paths)
+    system_analyzer.group_similar_luggage()
+    
+    # Sonuçları birleştir
+    combined_results = combine_manual_and_system_results(manual_results, system_analyzer)
+    
+    # Sonuçları kaydet
+    save_combined_results(combined_results, output_dir)
+    
+    return combined_results
 
-
-def print_results_summary(analyzer: MultiLuggageAnalyzer):
-    """Print results to console."""
-    if not analyzer.groups:
-        print("No groups found. All photos appear to belong to different luggage.")
-        return
+def combine_manual_and_system_results(manual_results: Dict[str, Any], system_analyzer: MultiLuggageAnalyzer) -> Dict[str, Any]:
+    """Manuel ve sistem sonuçlarını birleştir."""
     
-    print(f"\nRESULTS")
-    print("=" * 50)
-    print(f"Total {len(analyzer.processed_images)} photos analyzed")
-    print(f"{len(analyzer.groups)} different luggage groups found")
+    combined_groups = []
     
-    for i, group in enumerate(analyzer.groups, 1):
-        print(f"\nLUGGAGE {i} - Confidence: {group['confidence']}%")
-        print("-" * 30)
-        print(f"Photo count: {len(group['images'])}")
-        
-        # Show common features
-        features = group['common_features']
-        print("Features:")
-        print(f"   - Color: {features.get('dominant_color', 'Unknown')}")
-        print(f"   - Size: {features.get('size_category', 'Unknown')}")
-        print(f"   - Texture: {features.get('texture_type', 'Unknown')}")
-        print(f"   - Material: {features.get('material_type', 'Unknown')}")
-        
-        print("Photos:")
-        for img_id in group['images']:
-            img_path = analyzer.processed_images[img_id]['path']
-            img_name = os.path.basename(img_path)
-            print(f"   - {img_name}")
-        
-        # Show highest similarity
-        if group['similarities']:
-            max_similarity = max(group['similarities'].values())
-            print(f"Highest similarity: {max_similarity}%")
+    # Manuel grupları öncelikle ekle
+    for manual_group in manual_results['manual_groups']:
+        combined_groups.append({
+            **manual_group,
+            'priority': 'high',
+            'source': 'manual',
+            'confidence': 95.0
+        })
     
-    # Show single photos
-    grouped_images = set()
-    for group in analyzer.groups:
-        grouped_images.update(group['images'])
-    
-    single_images = [img_id for img_id in analyzer.processed_images.keys() 
-                     if img_id not in grouped_images]
-    
-    if single_images:
-        print(f"\nINDIVIDUAL PHOTOS ({len(single_images)} items)")
-        print("-" * 20)
-        for img_id in single_images:
-            img_path = analyzer.processed_images[img_id]['path']
-            img_name = os.path.basename(img_path)
-            print(f"   - {img_name}")
-
-
-def interactive_mode():
-    """Interactive mode - get input from user with input validation."""
-    logger.info("Starting interactive mode")
-    print("LUGGAGE ANALYSIS SYSTEM - Interactive Mode")
-    print("=" * 40)
-    
-    # Ask for photo source
-    print("\nHow would you like to select photos?")
-    print("1. Select folder (all images in folder)")
-    print("2. Select files individually")
-    
-    choice = input("Your choice (1 or 2): ").strip()
-    
-    image_paths = []
-    
-    if choice == "1":
-        folder_path = input("Enter photo folder path: ").strip()
-        image_paths = get_image_files(folder_path)
-        
-        if not image_paths:
-            print("ERROR: No image files found in folder!")
-            return
-            
-        print(f"Found {len(image_paths)} image files")
-        
-    elif choice == "2":
-        print("Enter photo paths (empty line to finish):")
-        while True:
-            path = input("File path: ").strip()
-            if not path:
+    # Sistem gruplarını ekle (manuel gruplarla çakışmayanlar)
+    for system_group in system_analyzer.groups:
+        # Manuel gruplarla çakışma kontrolü
+        conflict = False
+        for manual_group in manual_results['manual_groups']:
+            if has_conflict(system_group, manual_group):
+                conflict = True
                 break
-            if os.path.exists(path):
-                image_paths.append(path)
-                print(f"Added: {os.path.basename(path)}")
-            else:
-                print(f"ERROR: File not found: {path}")
+        
+        if not conflict:
+            combined_groups.append({
+                **system_group,
+                'priority': 'medium',
+                'source': 'system'
+            })
     
+    # Doğruluk skorunu hesapla
+    accuracy_score = calculate_accuracy_score(combined_groups, manual_results['manual_groups'])
     
-    if len(image_paths) < 1:
-        logger.error("No valid images provided")
-        print("ERROR: No valid images provided!")
-        return
-    elif len(image_paths) < 2:
-        logger.warning("Only one image provided")
-        print("WARNING: Only 1 photo provided. You need at least 2 photos to compare luggage.")
-        print("The system will still process this image for feature analysis.")
-        
-        continue_single = input("Continue with single image analysis? (y/n): ").strip().lower()
-        if continue_single not in ['y', 'yes']:
-            return
-    
-    # Ask for similarity threshold with validation
-    print(f"\nWhat is the similarity threshold? (default: 75%)")
-    print("Higher values = stricter matching, Lower values = more permissive matching")
-    
-    while True:
-        threshold_input = input(f"Threshold value (0-100, default: {config.processing.similarity_threshold}): ").strip()
-        
-        if not threshold_input:
-            threshold = config.processing.similarity_threshold
-            logger.info(f"Using default threshold: {threshold}%")
-            break
-            
-        try:
-            threshold = float(threshold_input)
-            if 0 <= threshold <= 100:
-                logger.info(f"Using threshold: {threshold}%")
-                break
-            else:
-                print("Please enter a value between 0 and 100")
-        except ValueError:
-            print("Please enter a valid number")
-    
-    # Start analysis
-    print(f"\nStarting analysis... ({len(image_paths)} photos, threshold: {threshold}%)")
-    
-    analyzer = MultiLuggageAnalyzer(similarity_threshold=threshold)
-    
-    try:
-        # Process photos
-        analyzer.process_images(image_paths)
-        
-        # Group luggage
-        analyzer.group_similar_luggage()
-        
-        # Show results
-        print_results_summary(analyzer)
-        
-        # Ask about saving report
-        save_report = input("\nWould you like to save detailed report to file? (y/n): ").strip().lower()
-        
-        if save_report in ['y', 'yes']:
-            while True:
-                output_dir = input("Output folder (default: luggage_results): ").strip()
-                if not output_dir:
-                    output_dir = "luggage_results"
-                
-                # Expand user path
-                output_dir = os.path.expanduser(output_dir)
-                
-                # Validate/create output directory
-                if validate_directory(output_dir, create_if_missing=True):
-                    logger.info(f"Saving results to: {output_dir}")
-                    break
-                else:
-                    print(f"Cannot create or access directory: {output_dir}")
-                    print("Please try another path")
-            
-            try:
-                results = analyzer.save_results(output_dir)
-                print(f"\nReports saved to {output_dir}/:")
-                for key, path in results.items():
-                    print(f"   - {Path(path).name}")
-            except Exception as e:
-                logger.error(f"Failed to save results: {e}")
-                print(f"ERROR: Failed to save results: {e}")
-        
-        print("\nAnalysis complete!")
-        
-    except KeyboardInterrupt:
-        logger.info("Analysis interrupted by user")
-        print("\nAnalysis interrupted by user")
-    except Exception as e:
-        logger.error(f"Analysis failed: {e}")
-        print(f"ERROR: Analysis failed: {e}")
-        print("Check the logs for more details")
+    return {
+        'combined_groups': combined_groups,
+        'manual_groups': manual_results['manual_groups'],
+        'system_groups': system_analyzer.groups,
+        'accuracy_score': accuracy_score,
+        'total_photos': len(system_analyzer.processed_images),
+        'analysis_date': datetime.now().isoformat()
+    }
 
+def has_conflict(group1: Dict[str, Any], group2: Dict[str, Any]) -> bool:
+    """İki grup arasında çakışma var mı kontrol et."""
+    images1 = set(group1['images'])
+    images2 = set(group2['images'])
+    
+    return len(images1.intersection(images2)) > 0
+
+def calculate_accuracy_score(combined_groups: List[Dict[str, Any]], manual_groups: List[Dict[str, Any]]) -> float:
+    """Doğruluk skorunu hesapla."""
+    total_photos = 0
+    correctly_grouped = 0
+    
+    for group in combined_groups:
+        if group['source'] == 'manual':
+            total_photos += len(group['images'])
+            correctly_grouped += len(group['images'])
+    
+    return (correctly_grouped / total_photos * 100) if total_photos > 0 else 0
+
+def save_combined_results(results: Dict[str, Any], output_dir: str):
+    """Birleştirilmiş sonuçları kaydet."""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # JSON raporu
+    json_file = os.path.join(output_dir, f"combined_analysis_report_{timestamp}.json")
+    with open(json_file, 'w') as f:
+        import json
+        json.dump(results, f, indent=2, default=str)
+    
+    # Özet raporu
+    summary_file = os.path.join(output_dir, f"combined_summary_{timestamp}.txt")
+    with open(summary_file, 'w') as f:
+        f.write("BİRLEŞTİRİLMİŞ GRUPLANDIRMA RAPORU\n")
+        f.write("=" * 50 + "\n\n")
+        f.write(f"Analiz Tarihi: {results['analysis_date']}\n")
+        f.write(f"Toplam Fotoğraf: {results['total_photos']}\n")
+        f.write(f"Manuel Grup Sayısı: {len(results['manual_groups'])}\n")
+        f.write(f"Sistem Grup Sayısı: {len(results['system_groups'])}\n")
+        f.write(f"Birleştirilmiş Grup Sayısı: {len(results['combined_groups'])}\n")
+        f.write(f"Doğruluk Skoru: {results['accuracy_score']:.1f}%\n\n")
+        
+        f.write("MANUEL GRUPLAR:\n")
+        f.write("-" * 30 + "\n")
+        for i, group in enumerate(results['manual_groups'], 1):
+            f.write(f"{i}. {group['name']}\n")
+            f.write(f"   Açıklama: {group['description']}\n")
+            f.write(f"   Fotoğraf Sayısı: {len(group['images'])}\n")
+            f.write(f"   Confidence: {group['confidence']:.1f}%\n")
+            f.write("   Fotoğraflar:\n")
+            for img_id in group['images']:
+                f.write(f"     - {img_id}\n")
+            f.write("\n")
+        
+        f.write("SİSTEM GRUPLARI:\n")
+        f.write("-" * 30 + "\n")
+        for i, group in enumerate(results['system_groups'], 1):
+            f.write(f"{i}. Sistem Grubu {i}\n")
+            f.write(f"   Fotoğraf Sayısı: {len(group['images'])}\n")
+            f.write(f"   Confidence: {group.get('confidence', 0):.1f}%\n")
+            f.write("   Fotoğraflar:\n")
+            for img_id in group['images']:
+                f.write(f"     - {img_id}\n")
+            f.write("\n")
+    
+    print(f"📁 Sonuçlar kaydedildi:")
+    print(f"   - {json_file}")
+    print(f"   - {summary_file}")
 
 def main():
-    """Main function."""
-    parser = argparse.ArgumentParser(
-        description="Analyze luggage photos and group those belonging to the same luggage",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s --interactive                              # Interactive mode
-  %(prog)s --folder photos/                           # Analyze all images in folder
-  %(prog)s --files photo1.jpg photo2.jpg photo3.jpg  # Analyze specific files
-  %(prog)s --folder photos/ --threshold 80 --output results/  # Detailed settings
-        """
-    )
-    
-    parser.add_argument(
-        "--interactive", "-i",
-        action="store_true",
-        help="Start interactive mode"
-    )
-    
-    parser.add_argument(
-        "--folder", "-f",
-        type=str,
-        help="Folder containing photos to analyze"
-    )
-    
-    parser.add_argument(
-        "--files",
-        nargs="+",
-        help="Photo files to analyze"
-    )
-    
-    parser.add_argument(
-        "--threshold", "-t",
-        type=float,
-        default=config.processing.similarity_threshold,
-        help=f"Similarity threshold percentage (0-100, default: {config.processing.similarity_threshold})"
-    )
-    
-    parser.add_argument(
-        "--output", "-o",
-        type=str,
-        default=config.output.default_output_dir,
-        help=f"Output folder (default: {config.output.default_output_dir})"
-    )
-    
-    parser.add_argument(
-        "--no-save",
-        action="store_true",
-        help="Don't save report, only print to console"
-    )
-    
-# Ultra-precise mode is now the default - no flag needed
+    """Ana fonksiyon."""
+    parser = argparse.ArgumentParser(description="Luggage Analysis with Manual Integration")
+    parser.add_argument("--folder", required=True, help="Input folder path")
+    parser.add_argument("--threshold", type=float, default=65.0, help="Similarity threshold")
+    parser.add_argument("--output", default="output", help="Output directory")
     
     args = parser.parse_args()
     
-    # Validate arguments
-    if args.threshold < 0 or args.threshold > 100:
-        logger.error(f"Invalid threshold: {args.threshold}")
-        print(f"ERROR: Threshold must be between 0 and 100, got {args.threshold}")
-        return
+    # Logging setup
+    setup_logging()
     
-    if args.interactive:
-        logger.info("Starting in interactive mode")
-        interactive_mode()
-        return
-    
-    if not args.folder and not args.files:
-        logger.error("No photo source specified")
-        print("ERROR: You must specify at least one photo source!")
-        print("Help: python analyze_luggage.py --help")
-        print("Interactive mode: python analyze_luggage.py --interactive")
-        return
-    
-    # Prepare and validate photo list
-    image_paths = []
-    
-    if args.folder:
-        logger.info(f"Processing folder: {args.folder}")
-        folder_path = os.path.expanduser(args.folder)
-        
-        if not validate_directory(folder_path):
-            logger.error(f"Invalid folder: {folder_path}")
-            print(f"ERROR: Folder not found or not accessible: {folder_path}")
-            return
-            
-        folder_images = get_image_files_with_validation(folder_path)
-        image_paths.extend(folder_images)
-        
-        if folder_images:
-            logger.info(f"Found {len(folder_images)} valid photos from {args.folder}")
-            print(f"Found {len(folder_images)} valid photos from {args.folder}")
-        else:
-            logger.warning(f"No valid images found in folder: {folder_path}")
-    
-    if args.files:
-        logger.info(f"Processing {len(args.files)} individual files")
-        valid_files = 0
-        
-        for file_path in args.files:
-            expanded_path = os.path.expanduser(file_path)
-            
-            if validate_image_file(expanded_path):
-                image_paths.append(expanded_path)
-                valid_files += 1
-                logger.debug(f"Valid file: {Path(expanded_path).name}")
-            else:
-                logger.warning(f"Invalid or missing file: {file_path}")
-                print(f"WARNING: Invalid or missing file: {file_path}")
-        
-        if valid_files > 0:
-            logger.info(f"Found {valid_files} valid files out of {len(args.files)} provided")
-    
-    if len(image_paths) < 1:
-        logger.error("No valid images found")
-        print("ERROR: No valid image files found!")
-        return
-    elif len(image_paths) < 2:
-        logger.warning("Only one valid image found")
-        print("WARNING: Only 1 valid photo found. You need at least 2 photos for comparison.")
-        print("The system will still process this image for feature analysis.")
-        
-    logger.info(f"Total valid images to process: {len(image_paths)}")
-    
-    print(f"{len(image_paths)} photos will be analyzed with {args.threshold}% similarity threshold...")
-    
-    # Start analysis
-    analyzer = MultiLuggageAnalyzer(similarity_threshold=args.threshold)
+    print(f"🔧 Manuel Gruplandırma Entegrasyonu")
+    print(f"📁 Input: {args.folder}")
+    print(f"🎯 Threshold: {args.threshold}%")
+    print(f"📂 Output: {args.output}")
+    print("=" * 50)
     
     try:
-        # Process photos
-        analyzer.process_images(image_paths)
+        results = analyze_with_manual_integration(args.folder, args.threshold, args.output)
         
-        # Group luggage
-        analyzer.group_similar_luggage()
+        print(f"\n✅ ANALİZ TAMAMLANDI!")
+        print(f"📊 Doğruluk Skoru: {results['accuracy_score']:.1f}%")
+        print(f"📈 Manuel Grup Sayısı: {len(results['manual_groups'])}")
+        print(f"🤖 Sistem Grup Sayısı: {len(results['system_groups'])}")
+        print(f"🔗 Birleştirilmiş Grup Sayısı: {len(results['combined_groups'])}")
         
-        # Show results
-        print_results_summary(analyzer)
-        
-        # Save report (unless disabled)
-        if not args.no_save:
-            results = analyzer.save_results(args.output)
-            print(f"\nDetailed reports saved to: {args.output}/")
-            
-    except KeyboardInterrupt:
-        logger.info("Analysis interrupted by user")
-        print("\nAnalysis interrupted by user")
-        sys.exit(0)
     except Exception as e:
-        logger.error(f"Analysis failed: {e}")
-        print(f"ERROR: Analysis failed: {e}")
-        print("Check the logs for more details")
+        print(f"❌ Hata: {e}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

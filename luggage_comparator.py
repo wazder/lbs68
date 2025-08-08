@@ -580,7 +580,12 @@ class LuggageComparator:
                 "a photo of a travel bag",
                 "a photo of a backpack",
                 "a photo of a duffel bag",
-                "a photo of a trolley bag"
+                "a photo of a trolley bag",
+                "a photo of a carry-on luggage",
+                "a photo of a checked luggage",
+                "a photo of a wheeled suitcase",
+                "a photo of a travel case",
+                "a photo of a luggage set"
             ]
             
             non_luggage_prompts = [
@@ -596,7 +601,19 @@ class LuggageComparator:
                 "a photo of random objects",
                 "a photo of clothing",
                 "a photo of electronics",
-                "a photo of household items"
+                "a photo of household items",
+                "a photo of a shopping bag",
+                "a photo of a plastic bag",
+                "a photo of a paper bag",
+                "a photo of a tote bag",
+                "a photo of a handbag",
+                "a photo of a purse",
+                "a photo of a messenger bag",
+                "a photo of a gym bag",
+                "a photo of a sports bag",
+                "a photo of a beach bag",
+                "a photo of a cosmetic bag",
+                "a photo of a makeup bag"
             ]
             
             all_prompts = luggage_prompts + non_luggage_prompts

@@ -257,7 +257,7 @@ class LuggageFeatureAnalyzer:
             'normalized_histogram': normalized_histogram
         }
     
-    def analyze_size(self, mask: np.ndarray) -> Dict[str, Any]:
+    def analyze_size(self, mask: Optional[np.ndarray]) -> Dict[str, Any]:
         """Analyze luggage size."""
         if mask is None:
             return {'size_category': 'unknown', 'pixel_area': 0}
@@ -412,22 +412,22 @@ class MultiLuggageAnalyzer:
         
         # Initialize ensemble of models for maximum accuracy
         with memory_cleanup():
-            # Use multiple SAM models for better segmentation
-            self.comparators = {
-                'primary': LuggageComparator(sam_model_type='vit_b', enable_logging=enable_logging),
-                'secondary': LuggageComparator(sam_model_type='vit_l', enable_logging=False),  # Reduce noise
-                'tertiary': LuggageComparator(sam_model_type='vit_h', enable_logging=False)
-            }
+            # Use primary comparator for M2 MacBook compatibility
+            self.comparator = LuggageComparator(sam_model_type='vit_b', enable_logging=enable_logging)
             self.feature_analyzer = LuggageFeatureAnalyzer()
             
         self.similarity_threshold = similarity_threshold
         
         # Ultra-precise thresholds - all high for maximum accuracy
         self.thresholds = {
+            'strict': similarity_threshold,              # 95% - strict matching
             'ultra_strict': similarity_threshold,        # 95% - ultra strict matching
             'ensemble_voting': similarity_threshold - 3,  # 92% - ensemble consensus
             'geometric_verified': similarity_threshold - 5,  # 90% - geometric consistency verified
-            'color_verified': similarity_threshold - 7   # 88% - color consistency verified
+            'color_verified': similarity_threshold - 7,  # 88% - color consistency verified
+            'fallback': similarity_threshold - 10,       # 85% - fallback threshold
+            'color_robust': similarity_threshold - 15,   # 80% - color robust threshold
+            'shape_based': similarity_threshold - 20     # 75% - shape based threshold
         }
         
         # Data storage with memory tracking
@@ -455,7 +455,8 @@ class MultiLuggageAnalyzer:
         skipped_count = 0
         
         for i, image_path in enumerate(image_paths):
-            self.logger.debug(f"Processing image {i+1}/{len(image_paths)}: {os.path.basename(image_path)}")
+            self.logger.info(f"Processing image {i+1}/{len(image_paths)}: {os.path.basename(image_path)}")
+            print(f"🔍 Processing: {os.path.basename(image_path)}")
             
             if not os.path.exists(image_path):
                 self.logger.warning(f"File not found: {image_path}")
@@ -474,23 +475,22 @@ class MultiLuggageAnalyzer:
                     self._memory_usage['images'] += image_size
                     
                     # STEP 1: Detect if this is luggage
-                    luggage_detection = self.comparator.detect_luggage(image, threshold=0.7)
-                    
-                    if not luggage_detection['is_luggage']:
-                        self.logger.info(f"Skipped (not luggage): {os.path.basename(image_path)} - {luggage_detection['reason']}")
-                        progress.update(1, f"Skipped: {os.path.basename(image_path)} (not luggage)")
-                        skipped_count += 1
-                        # Clean up image from memory
-                        del image
-                        self._memory_usage['images'] -= image_size
-                        continue
-                    
-                    self.logger.debug(f"Luggage detected: {os.path.basename(image_path)} (confidence: {luggage_detection['confidence']:.1%})")
+                    try:
+                        luggage_detection = self.comparator.detect_luggage(image, threshold=0.6)
+                        self.logger.debug(f"Luggage detection: {luggage_detection}")
+                    except Exception as e:
+                        self.logger.warning(f"Luggage detection failed: {e}")
+                        luggage_detection = {'is_luggage': True, 'confidence': 0.5, 'reason': f'Detection failed: {e}'}
                     
                     # SAM segmentation with memory management
                     mask = None
                     if self.comparator.sam_predictor is not None:
-                        mask = self.comparator.segment_luggage(image)
+                        try:
+                            mask = self.comparator.segment_luggage(image)
+                            self.logger.debug(f"SAM mask created: {mask.shape}, sum: {np.sum(mask > 0)}")
+                        except Exception as e:
+                            self.logger.warning(f"SAM segmentation failed: {e}")
+                            mask = None
                     
                     # Extract embedding (this might reload the image internally)
                     embedding = self.comparator.process_image(image_path)
@@ -524,6 +524,7 @@ class MultiLuggageAnalyzer:
                     
                     processed_count += 1
                     progress.update(1, f"Processed: {os.path.basename(image_path)}")
+                    print(f"✅ Processed: {os.path.basename(image_path)}")
                     
                     # Periodic memory cleanup
                     if processed_count % 5 == 0:
@@ -532,6 +533,9 @@ class MultiLuggageAnalyzer:
                     
                 except Exception as e:
                     self.logger.error(f"Error processing {image_path}: {e}")
+                    import traceback
+                    self.logger.error(f"Full traceback: {traceback.format_exc()}")
+                    print(f"❌ Error processing {os.path.basename(image_path)}: {e}")
                     progress.update(1, f"Error: {os.path.basename(image_path)}")
                     skipped_count += 1
         
@@ -823,7 +827,7 @@ class MultiLuggageAnalyzer:
         return similarity_matrix
     
     def group_similar_luggage(self) -> List[Dict[str, Any]]:
-        """Group similar luggage using two-phase matching."""
+        """Group similar luggage using advanced multi-phase matching with intelligent clustering."""
         if self.similarity_matrix is None:
             self.calculate_similarity_matrix()
         
@@ -833,31 +837,34 @@ class MultiLuggageAnalyzer:
         image_ids = list(self.processed_images.keys())
         n = len(image_ids)
         
-        print("Starting two-phase grouping...")
+        print("Starting advanced multi-phase grouping with intelligent clustering...")
         
-        # PHASE 1: Strict grouping
-        print("Phase 1: Strict grouping...")
-        groups_phase1 = self._group_with_strict_threshold(image_ids)
+        # PHASE 0: Separate luggage and non-luggage items
+        print("Phase 0: Separating luggage and non-luggage items...")
+        luggage_ids, non_luggage_ids = self._separate_luggage_and_non_luggage(image_ids)
         
-        # PHASE 2: Relaxed grouping for remaining images
-        print("Phase 2: Relaxed grouping for remaining items...")
-        grouped_ids_phase1 = set()
-        for group in groups_phase1:
-            grouped_ids_phase1.update(group['images'])
+        print(f"Found {len(luggage_ids)} luggage items and {len(non_luggage_ids)} non-luggage items")
         
-        remaining_ids = [img_id for img_id in image_ids if img_id not in grouped_ids_phase1]
-        groups_phase2 = self._group_with_dynamic_thresholds(remaining_ids, grouped_ids_phase1)
+        # PHASE 1: Intelligent clustering for luggage
+        print("Phase 1: Intelligent clustering for luggage items...")
+        luggage_groups = self._intelligent_clustering(luggage_ids)
         
-        # Combine results
-        all_groups = groups_phase1 + groups_phase2
+        # PHASE 2: Group non-luggage items separately
+        print("Phase 2: Grouping non-luggage items...")
+        non_luggage_groups = self._group_non_luggage_items(non_luggage_ids)
+        
+        # PHASE 3: Merge similar groups
+        print("Phase 3: Merging similar groups...")
+        all_groups = luggage_groups + non_luggage_groups
+        merged_groups = self._merge_similar_groups(all_groups)
         
         # Renumber groups
-        for i, group in enumerate(all_groups, 1):
+        for i, group in enumerate(merged_groups, 1):
             group['group_id'] = i
         
-        self.groups = all_groups
-        print(f"Grouping complete: {len(groups_phase1)} strict groups + {len(groups_phase2)} relaxed groups")
-        return all_groups
+        self.groups = merged_groups
+        print(f"Grouping complete: {len(merged_groups)} final groups")
+        return merged_groups
     
     def _group_with_strict_threshold(self, image_ids: List[str]) -> List[Dict[str, Any]]:
         """Phase 1: Group with strict threshold."""
@@ -904,6 +911,232 @@ class MultiLuggageAnalyzer:
                 groups.append(group)
         
         return groups
+    
+    def _separate_luggage_and_non_luggage(self, image_ids: List[str]) -> Tuple[List[str], List[str]]:
+        """Separate luggage and non-luggage items."""
+        luggage_ids = []
+        non_luggage_ids = []
+        
+        for img_id in image_ids:
+            detection = self.processed_images[img_id]['luggage_detection']
+            
+            if detection['is_luggage'] and detection['confidence'] >= 0.6:
+                luggage_ids.append(img_id)
+                self.logger.debug(f"Luggage item: {img_id} (confidence: {detection['confidence']})")
+            else:
+                non_luggage_ids.append(img_id)
+                self.logger.debug(f"Non-luggage item: {img_id} (confidence: {detection['confidence']}, reason: {detection['reason']})")
+        
+        return luggage_ids, non_luggage_ids
+    
+    def _group_non_luggage_items(self, non_luggage_ids: List[str]) -> List[Dict[str, Any]]:
+        """Group non-luggage items separately."""
+        if not non_luggage_ids:
+            return []
+        
+        visited = set()
+        groups = []
+        
+        for i, img_id in enumerate(non_luggage_ids):
+            if img_id in visited:
+                continue
+            
+            group = {
+                'group_id': len(groups) + 1,
+                'images': [img_id],
+                'similarities': {},
+                'common_features': {},
+                'confidence': 0.0,
+                'matching_type': 'non_luggage',
+                'item_type': 'non_luggage'
+            }
+            
+            visited.add(img_id)
+            
+            # Find other similar non-luggage items
+            for j, other_img_id in enumerate(non_luggage_ids):
+                if i != j and other_img_id not in visited:
+                    similarity = self.similarity_matrix[list(self.processed_images.keys()).index(img_id)][list(self.processed_images.keys()).index(other_img_id)]
+                    
+                    # Lower threshold for non-luggage items since they might be the same product
+                    if similarity >= 60:  # 60% threshold for non-luggage
+                        group['images'].append(other_img_id)
+                        group['similarities'][other_img_id] = round(similarity, 2)
+                        visited.add(other_img_id)
+            
+            # Only keep groups with more than 1 image
+            if len(group['images']) > 1:
+                group['common_features'] = self._analyze_group_features(group['images'])
+                group['confidence'] = self._calculate_group_confidence(group['images'])
+                group['explanation'] = self._generate_group_explanation(group)
+                groups.append(group)
+        
+        return groups
+    
+    def _intelligent_clustering(self, image_ids: List[str]) -> List[Dict[str, Any]]:
+        """Intelligent clustering using multiple similarity metrics."""
+        if not image_ids:
+            return []
+        
+        # Convert similarity matrix to distance matrix for clustering
+        image_indices = [list(self.processed_images.keys()).index(img_id) for img_id in image_ids]
+        similarity_submatrix = self.similarity_matrix[np.ix_(image_indices, image_indices)]
+        distance_matrix = 1 - similarity_submatrix / 100
+        
+        # Try different clustering algorithms
+        groups = []
+        
+        # Method 1: DBSCAN with adaptive eps
+        for eps in [0.1, 0.2, 0.3, 0.4, 0.5]:
+            clustering = DBSCAN(eps=eps, min_samples=2, metric='precomputed')
+            labels = clustering.fit_predict(distance_matrix)
+            
+            if len(set(labels)) > 1:  # Found some clusters
+                dbscan_groups = self._create_groups_from_labels(image_ids, labels, similarity_submatrix)
+                if len(dbscan_groups) > 0:
+                    groups.extend(dbscan_groups)
+                    break
+        
+        # Method 2: Hierarchical clustering if DBSCAN failed
+        if not groups:
+            from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
+            from scipy.spatial.distance import squareform
+            
+            # Convert to condensed distance matrix
+            condensed_dist = squareform(distance_matrix)
+            
+            # Perform hierarchical clustering
+            linkage_matrix = linkage(condensed_dist, method='ward')
+            
+            # Try different distance thresholds
+            for distance_threshold in [0.3, 0.4, 0.5, 0.6]:
+                labels = fcluster(linkage_matrix, distance_threshold, criterion='distance')
+                
+                if len(set(labels)) > 1:
+                    hierarchical_groups = self._create_groups_from_labels(image_ids, labels, similarity_submatrix)
+                    if len(hierarchical_groups) > 0:
+                        groups.extend(hierarchical_groups)
+                        break
+        
+        # Method 3: Manual grouping based on high similarity
+        if not groups:
+            groups = self._manual_high_similarity_grouping(image_ids, similarity_submatrix)
+        
+        return groups
+    
+    def _create_groups_from_labels(self, image_ids: List[str], labels: np.ndarray, similarity_matrix: np.ndarray) -> List[Dict[str, Any]]:
+        """Create groups from clustering labels."""
+        groups = []
+        unique_labels = set(labels)
+        
+        for label in unique_labels:
+            if label == -1:  # Noise points
+                continue
+            
+            group_indices = np.where(labels == label)[0]
+            group_images = [image_ids[i] for i in group_indices]
+            
+            if len(group_images) >= 2:
+                # Calculate average similarity within group
+                similarities = []
+                for i in group_indices:
+                    for j in group_indices:
+                        if i != j:
+                            similarities.append(similarity_matrix[i, j])
+                
+                avg_similarity = np.mean(similarities) if similarities else 0
+                
+                group = {
+                    'images': group_images,
+                    'confidence': avg_similarity,
+                    'similarities': {},
+                    'common_features': self._analyze_group_features(group_images),
+                    'matching_type': 'intelligent_clustering'
+                }
+                groups.append(group)
+        
+        return groups
+    
+    def _manual_high_similarity_grouping(self, image_ids: List[str], similarity_matrix: np.ndarray) -> List[Dict[str, Any]]:
+        """Manual grouping based on high similarity pairs."""
+        groups = []
+        visited = set()
+        
+        for i, img_id in enumerate(image_ids):
+            if img_id in visited:
+                continue
+            
+            group = {
+                'images': [img_id],
+                'confidence': 0.0,
+                'similarities': {},
+                'common_features': {},
+                'matching_type': 'manual_high_similarity'
+            }
+            
+            visited.add(img_id)
+            
+            # Find images with high similarity to this one
+            for j, other_img_id in enumerate(image_ids):
+                if i != j and other_img_id not in visited:
+                    similarity = similarity_matrix[i, j]
+                    
+                    # Use adaptive threshold based on overall similarity distribution
+                    if similarity >= 70:  # High similarity threshold
+                        group['images'].append(other_img_id)
+                        group['similarities'][other_img_id] = round(similarity, 2)
+                        visited.add(other_img_id)
+            
+            if len(group['images']) > 1:
+                group['common_features'] = self._analyze_group_features(group['images'])
+                group['confidence'] = self._calculate_group_confidence(group['images'])
+                groups.append(group)
+        
+        return groups
+    
+    def _merge_similar_groups(self, groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Merge groups that are very similar to each other."""
+        if len(groups) <= 1:
+            return groups
+        
+        merged = []
+        used = set()
+        
+        for i, group1 in enumerate(groups):
+            if i in used:
+                continue
+            
+            merged_group = group1.copy()
+            used.add(i)
+            
+            # Check if this group should be merged with others
+            for j, group2 in enumerate(groups):
+                if j <= i or j in used:
+                    continue
+                
+                # Calculate similarity between groups
+                similarity = self._calculate_group_similarity(group1, group2)
+                
+                if similarity >= 80:  # High similarity between groups
+                    merged_group['images'].extend(group2['images'])
+                    merged_group['confidence'] = (merged_group['confidence'] + group2['confidence']) / 2
+                    used.add(j)
+            
+            merged.append(merged_group)
+        
+        return merged
+    
+    def _calculate_group_similarity(self, group1: Dict[str, Any], group2: Dict[str, Any]) -> float:
+        """Calculate similarity between two groups."""
+        similarities = []
+        
+        for img1 in group1['images']:
+            for img2 in group2['images']:
+                idx1 = list(self.processed_images.keys()).index(img1)
+                idx2 = list(self.processed_images.keys()).index(img2)
+                similarities.append(self.similarity_matrix[idx1, idx2])
+        
+        return np.mean(similarities) if similarities else 0
     
     def _group_with_dynamic_thresholds(self, remaining_ids: List[str], already_grouped: set) -> List[Dict[str, Any]]:
         """Phase 2: Group remaining images with dynamic thresholds."""
@@ -960,7 +1193,7 @@ class MultiLuggageAnalyzer:
         return groups
     
     def _analyze_group_features(self, image_ids: List[str]) -> Dict[str, Any]:
-        """Analyze common features within the group."""
+        """Analyze common features within the group with enhanced analysis."""
         if not image_ids:
             return {}
         
@@ -969,6 +1202,9 @@ class MultiLuggageAnalyzer:
         sizes = []
         textures = []
         materials = []
+        areas = []
+        smoothness_values = []
+        aspect_ratios = []
         
         for img_id in image_ids:
             features = self.processed_images[img_id]['features']
@@ -976,6 +1212,9 @@ class MultiLuggageAnalyzer:
             sizes.append(features['size']['size_category'])
             textures.append(features['texture']['texture_type'])
             materials.append(features['brand']['material_type'])
+            areas.append(features['size']['pixel_area'])
+            smoothness_values.append(features['texture']['smoothness'])
+            aspect_ratios.append(features['size']['aspect_ratio'])
         
         # Find most common features
         common_features = {
@@ -989,16 +1228,36 @@ class MultiLuggageAnalyzer:
             'material_consistency': len(set(materials)) == 1
         }
         
-        # Calculate average values
-        avg_area = np.mean([self.processed_images[img_id]['features']['size']['pixel_area'] for img_id in image_ids])
-        avg_smoothness = np.mean([self.processed_images[img_id]['features']['texture']['smoothness'] for img_id in image_ids])
+        # Calculate enhanced statistics
+        avg_area = np.mean(areas)
+        avg_smoothness = np.mean(smoothness_values)
+        avg_aspect_ratio = np.mean(aspect_ratios)
+        
+        # Calculate consistency scores
+        color_variance = np.var([self._color_to_numeric(c) for c in colors]) if len(set(colors)) > 1 else 0
+        size_variance = np.var(areas) if len(set(areas)) > 1 else 0
+        texture_variance = np.var(smoothness_values) if len(set(smoothness_values)) > 1 else 0
         
         common_features.update({
             'average_pixel_area': round(avg_area, 0),
-            'average_smoothness': round(avg_smoothness, 2)
+            'average_smoothness': round(avg_smoothness, 2),
+            'average_aspect_ratio': round(avg_aspect_ratio, 2),
+            'color_variance': round(color_variance, 2),
+            'size_variance': round(size_variance, 2),
+            'texture_variance': round(texture_variance, 2),
+            'group_consistency_score': round((1 - color_variance/100) * (1 - size_variance/10000) * (1 - texture_variance/100), 2)
         })
         
         return common_features
+    
+    def _color_to_numeric(self, color_name: str) -> int:
+        """Convert color name to numeric value for variance calculation."""
+        color_map = {
+            'black': 0, 'navy': 1, 'brown': 2, 'gray': 3, 'blue': 4,
+            'red': 5, 'green': 6, 'yellow': 7, 'orange': 8, 'purple': 9,
+            'pink': 10, 'white': 11, 'other': 12
+        }
+        return color_map.get(color_name, 12)
     
     def _calculate_group_confidence(self, image_ids: List[str]) -> float:
         """Calculate group confidence score."""
