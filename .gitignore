@@ -180,9 +180,47 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# Ignore input directory's contents
-input/*
+# Luggage Analysis Project Specific
+# ================================
 
-# Ignore output directory's contents
+# Model files (SAM checkpoints are large)
+sam_vit_*.pth
+*.pth
+models/
+checkpoints/
+
+# Analysis data and results
+input/*
+!input/.gitkeep
 output/*
-sam_vit_b.pth
+!output/.gitkeep
+!output/README.md
+
+# Temporary analysis files
+*.npz
+luggage_database.npz
+embeddings_*.npy
+similarity_matrix_*.csv
+temp_images/
+temp_analysis/
+
+# Processing artifacts
+processed_*/
+detailed_*/
+RESULTS_*.txt
+analysis_*.json
+*.log
+
+# System and IDE files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Config and secrets
+config.local.yaml
+config.local.json
+.env.local
+secrets.yaml

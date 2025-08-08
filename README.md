@@ -8,23 +8,40 @@ Quick Start
 
 1. Easy Method - Just Drop Photos:
    Put your photos in the 'input' folder and run:
+   ```bash
    python auto_analyze.py
+   ```
+   **New**: Real-time progress updates and intelligent caching for faster runs!
 
-2. Interactive Method:
+2. **Enhanced Interactive Method**:
+   ```bash
    python analyze_luggage.py --interactive
+   ```
+   **New**: Improved input validation, better error messages, config-based defaults!
 
-3. Command Line Method:
+3. **Robust Command Line Method**:
+   ```bash
    python analyze_luggage.py --folder your_photos/
    python analyze_luggage.py --files photo1.jpg photo2.jpg photo3.jpg
+   ```
+   **New**: Comprehensive input validation and graceful error handling!
 
-Folder Structure
-----------------
+## 📁 Enhanced Folder Structure
+```
 lbs68/
 ├── input/                    Drop your photos here
-├── output/                   Results will appear here
-├── auto_analyze.py           Simple: analyzes input folder automatically
-├── analyze_luggage.py        Full-featured analysis tool
+├── output/                   Results appear here (now with auto-archiving!)
+│   ├── archive/             Old results automatically archived
+│   └── README.md            Output directory documentation
+├── model_cache/             Cached models for faster loading
+├── config.yaml              Configuration file (optional)
+├── auto_analyze.py          Simple: analyzes input folder automatically
+├── analyze_luggage.py       Full-featured analysis tool
 ├── multi_luggage_analyzer.py Core analysis engine
+├── utils.py                 Utility functions and helpers
+├── model_cache.py           Intelligent model caching system
+└── config.py                Configuration management
+```
 ├── luggage_comparator.py     SAM + CLIP integration
 └── requirements.txt          Install dependencies
 

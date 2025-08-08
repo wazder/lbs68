@@ -8,30 +8,42 @@ import requests
 from io import BytesIO
 from sklearn.metrics.pairwise import cosine_similarity
 import warnings
+import logging
+from pathlib import Path
+import time
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings("ignore")
+from utils import setup_logging, validate_image_file, retry_on_failure, memory_cleanup, safe_file_operation
+from model_cache import get_model_cache
+
+# Setup logging
+logger = setup_logging()
 
 try:
     from segment_anything import SamPredictor, sam_model_registry
     SAM_AVAILABLE = True
-except ImportError:
+    logger.info("Segment Anything (SAM) is available")
+except ImportError as e:
     SAM_AVAILABLE = False
-    print("Warning: segment-anything not available. Install with: pip install git+https://github.com/facebookresearch/segment-anything.git")
+    logger.warning(f"Segment Anything not available: {e}")
+    logger.info("Install with: pip install git+https://github.com/facebookresearch/segment-anything.git")
 
 try:
     from transformers import CLIPProcessor, CLIPModel
     CLIP_AVAILABLE = True
-except ImportError:
+    logger.info("CLIP (transformers) is available")
+except ImportError as e:
     CLIP_AVAILABLE = False
-    print("Warning: transformers not available. Install with: pip install transformers")
+    logger.warning(f"CLIP not available: {e}")
+    logger.info("Install with: pip install transformers")
 
 try:
     import faiss
     FAISS_AVAILABLE = True
-except ImportError:
+    logger.info("FAISS is available for efficient similarity search")
+except ImportError as e:
     FAISS_AVAILABLE = False
-    print("Warning: FAISS not available. Install with: pip install faiss-cpu")
+    logger.warning(f"FAISS not available: {e}")
+    logger.info("Install with: pip install faiss-cpu")
 
 
 class LuggageComparator:
@@ -46,7 +58,8 @@ class LuggageComparator:
         sam_model_type: str = "vit_b",
         sam_checkpoint_path: Optional[str] = None,
         clip_model_name: str = "openai/clip-vit-base-patch32",
-        device: str = "auto"
+        device: str = "auto",
+        enable_logging: bool = True
     ):
         """
         Initialize the luggage comparator with SAM and CLIP models.
@@ -56,8 +69,23 @@ class LuggageComparator:
             sam_checkpoint_path: Path to SAM checkpoint file
             clip_model_name: CLIP model name from HuggingFace
             device: Device to use ('auto', 'cpu', 'cuda')
+            enable_logging: Enable detailed logging
         """
-        self.device = self._setup_device(device)
+        if enable_logging:
+            self.logger = logger
+        else:
+            self.logger = logging.getLogger('luggage_analysis')
+            self.logger.disabled = True
+            
+        self.logger.info("Initializing LuggageComparator...")
+        
+        try:
+            self.device = self._setup_device(device)
+            self.logger.info(f"Using device: {self.device}")
+        except Exception as e:
+            self.logger.error(f"Failed to setup device: {e}")
+            self.device = torch.device("cpu")
+            self.logger.info("Falling back to CPU")
         
         # Initialize models
         self.sam_predictor = None
@@ -66,64 +94,268 @@ class LuggageComparator:
         self.embeddings_db = {}
         self.faiss_index = None
         
-        # Setup SAM
+        # Model setup with error handling
+        self.sam_model_type = sam_model_type
+        self.clip_model_name = clip_model_name
+        
+        # Setup SAM with graceful fallback
         if SAM_AVAILABLE:
-            self._setup_sam(sam_model_type, sam_checkpoint_path)
+            try:
+                self._setup_sam(sam_model_type, sam_checkpoint_path)
+                self.logger.info("SAM model loaded successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to load SAM model: {e}")
+                self.logger.info("Segmentation features will be disabled")
+                self.sam_predictor = None
         else:
-            print("SAM not available - segmentation features disabled")
+            self.logger.info("SAM not available - segmentation features disabled")
             
-        # Setup CLIP
+        # Setup CLIP with graceful fallback
         if CLIP_AVAILABLE:
-            self._setup_clip(clip_model_name)
+            try:
+                self._setup_clip(clip_model_name)
+                self.logger.info("CLIP model loaded successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to load CLIP model: {e}")
+                self.logger.info("Embedding features will be disabled")
+                self.clip_model = None
+                self.clip_processor = None
         else:
-            print("CLIP not available - embedding features disabled")
+            self.logger.info("CLIP not available - embedding features disabled")
+            
+        # Check if we have at least one working model
+        if self.sam_predictor is None and self.clip_model is None:
+            self.logger.warning("No models loaded successfully - limited functionality available")
+        
+        self.logger.info("LuggageComparator initialization completed")
     
     def _setup_device(self, device: str) -> torch.device:
-        """Setup the computation device."""
+        """Setup the computation device with fallback options."""
         if device == "auto":
             if torch.cuda.is_available():
-                return torch.device("cuda")
-            elif torch.backends.mps.is_available():
-                return torch.device("mps")
-            else:
+                try:
+                    # Test CUDA device
+                    test_tensor = torch.zeros(1).cuda()
+                    del test_tensor
+                    torch.cuda.empty_cache()
+                    self.logger.info("CUDA is available and working")
+                    return torch.device("cuda")
+                except Exception as e:
+                    self.logger.warning(f"CUDA available but not working: {e}")
+                    
+            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                try:
+                    # Test MPS device
+                    test_tensor = torch.zeros(1).to('mps')
+                    del test_tensor
+                    self.logger.info("MPS is available and working")
+                    return torch.device("mps")
+                except Exception as e:
+                    self.logger.warning(f"MPS available but not working: {e}")
+                    
+            self.logger.info("Using CPU device")
+            return torch.device("cpu")
+        else:
+            try:
+                device_obj = torch.device(device)
+                # Test the specified device
+                test_tensor = torch.zeros(1).to(device_obj)
+                del test_tensor
+                if device_obj.type == 'cuda':
+                    torch.cuda.empty_cache()
+                return device_obj
+            except Exception as e:
+                self.logger.error(f"Specified device '{device}' not working: {e}")
+                self.logger.info("Falling back to CPU")
                 return torch.device("cpu")
-        return torch.device(device)
     
+    @retry_on_failure(max_retries=2, delay=2.0)
     def _setup_sam(self, model_type: str, checkpoint_path: Optional[str]):
-        """Initialize SAM model for segmentation."""
-        try:
-            if checkpoint_path and os.path.exists(checkpoint_path):
-                sam = sam_model_registry[model_type](checkpoint=checkpoint_path)
-            else:
-                # Download checkpoint if not provided
+        """Initialize SAM model for segmentation with robust error handling."""
+        if model_type not in ['vit_b', 'vit_l', 'vit_h']:
+            raise ValueError(f"Invalid SAM model type: {model_type}. Must be 'vit_b', 'vit_l', or 'vit_h'")
+        
+        self.logger.info(f"Loading SAM model: {model_type}")
+        
+        # Determine checkpoint path
+        if checkpoint_path and Path(checkpoint_path).exists():
+            self.logger.info(f"Using provided checkpoint: {checkpoint_path}")
+            final_checkpoint_path = checkpoint_path
+        else:
+            # Use default checkpoint path
+            final_checkpoint_path = f"sam_{model_type}.pth"
+            
+            if not Path(final_checkpoint_path).exists():
+                self.logger.info(f"Checkpoint not found, downloading SAM {model_type}...")
                 checkpoint_url = self._get_sam_checkpoint_url(model_type)
-                checkpoint_path = f"sam_{model_type}.pth"
                 
-                if not os.path.exists(checkpoint_path):
-                    print(f"Downloading SAM checkpoint: {model_type}")
-                    self._download_file(checkpoint_url, checkpoint_path)
+                try:
+                    self._download_file(checkpoint_url, final_checkpoint_path)
+                    self.logger.info(f"Successfully downloaded SAM checkpoint to {final_checkpoint_path}")
+                except Exception as e:
+                    raise RuntimeError(f"Failed to download SAM checkpoint: {e}")
+            else:
+                self.logger.info(f"Using existing checkpoint: {final_checkpoint_path}")
+        
+        # Validate checkpoint file
+        checkpoint_size = Path(final_checkpoint_path).stat().st_size / (1024 * 1024)  # MB
+        if checkpoint_size < 50:  # SAM models are typically >300MB
+            raise RuntimeError(f"Checkpoint file seems corrupted (size: {checkpoint_size:.1f}MB)")
+        
+        # Try to load from cache first
+        cache = get_model_cache()
+        
+        # Check if we can load from cache
+        if cache.is_cached(model_type, final_checkpoint_path, str(self.device)):
+            self.logger.info("Loading SAM model from cache...")
+            try:
+                # Create a dummy model instance to get the class
+                temp_sam = sam_model_registry[model_type]()
+                sam_class = type(temp_sam.image_encoder)  # Get the encoder class
+                del temp_sam
                 
-                sam = sam_model_registry[model_type](checkpoint=checkpoint_path)
-            
-            sam.to(self.device)
-            self.sam_predictor = SamPredictor(sam)
-            print(f"SAM model ({model_type}) loaded successfully on {self.device}")
-            
-        except Exception as e:
-            print(f"Failed to load SAM: {e}")
-            self.sam_predictor = None
+                # Try to load full model from cache
+                sam = cache.load_cached_model(lambda: sam_model_registry[model_type](checkpoint=final_checkpoint_path),
+                                             model_type, final_checkpoint_path, str(self.device))
+                
+                if sam is not None:
+                    sam.to(self.device)
+                    self.sam_predictor = SamPredictor(sam)
+                    self.logger.info(f"SAM model ({model_type}) loaded from cache successfully")
+                    return  # Successfully loaded from cache
+                else:
+                    self.logger.warning("Failed to load from cache, loading from checkpoint...")
+            except Exception as e:
+                self.logger.warning(f"Cache loading failed: {e}, falling back to checkpoint loading")
+        
+        # Load model from checkpoint with memory management
+        with memory_cleanup():
+            try:
+                self.logger.info(f"Loading SAM model from checkpoint ({checkpoint_size:.1f}MB)...")
+                start_time = time.time()
+                
+                sam = sam_model_registry[model_type](checkpoint=final_checkpoint_path)
+                
+                self.logger.info(f"Moving SAM model to {self.device}...")
+                sam.to(self.device)
+                
+                self.sam_predictor = SamPredictor(sam)
+                
+                load_time = time.time() - start_time
+                self.logger.info(f"SAM model ({model_type}) loaded successfully on {self.device} in {load_time:.2f}s")
+                
+                # Cache the loaded model for future use
+                try:
+                    self.logger.info("Caching SAM model for faster future loading...")
+                    cache.cache_model(sam, model_type, final_checkpoint_path, str(self.device))
+                except Exception as e:
+                    self.logger.warning(f"Failed to cache model: {e}")
+                
+            except torch.cuda.OutOfMemoryError:
+                self.logger.error("CUDA out of memory loading SAM model, falling back to CPU")
+                if self.device.type != 'cpu':
+                    self.device = torch.device('cpu')
+                    sam.to(self.device)
+                    self.sam_predictor = SamPredictor(sam)
+                else:
+                    # Still try to cache even on CPU fallback
+                    try:
+                        cache.cache_model(sam, model_type, final_checkpoint_path, str(self.device))
+                    except:
+                        pass  # Don't fail if caching fails
+                    raise RuntimeError("Insufficient memory to load SAM model even on CPU")
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize SAM model: {e}")
     
+    @retry_on_failure(max_retries=2, delay=1.0)
     def _setup_clip(self, model_name: str):
-        """Initialize CLIP model for embeddings."""
-        try:
-            self.clip_model = CLIPModel.from_pretrained(model_name).to(self.device)
-            self.clip_processor = CLIPProcessor.from_pretrained(model_name)
-            print(f"CLIP model ({model_name}) loaded successfully on {self.device}")
-            
-        except Exception as e:
-            print(f"Failed to load CLIP: {e}")
-            self.clip_model = None
-            self.clip_processor = None
+        """Initialize CLIP model for embeddings with robust error handling and caching."""
+        self.logger.info(f"Loading CLIP model: {model_name}")
+        
+        # Try to load from cache first
+        cache = get_model_cache()
+        cache_key = f"clip_{model_name.replace('/', '_')}"
+        
+        # For CLIP, we use model name as "checkpoint path" since it's from HuggingFace
+        if cache.is_cached(cache_key, model_name, str(self.device)):
+            self.logger.info("Loading CLIP model from cache...")
+            try:
+                # Load processor (always load fresh as it's lightweight)
+                self.clip_processor = CLIPProcessor.from_pretrained(model_name)
+                
+                # Try to load model from cache
+                cached_model = cache.load_cached_model(
+                    lambda: CLIPModel.from_pretrained(model_name),
+                    cache_key, model_name, str(self.device)
+                )
+                
+                if cached_model is not None:
+                    self.clip_model = cached_model
+                    self.clip_model.to(self.device)
+                    
+                    # Quick test
+                    test_image = Image.new('RGB', (224, 224), color='white')
+                    inputs = self.clip_processor(images=test_image, return_tensors="pt")
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                    
+                    with torch.no_grad():
+                        _ = self.clip_model.get_image_features(**inputs)
+                    
+                    self.logger.info(f"CLIP model ({model_name}) loaded from cache successfully")
+                    return
+                else:
+                    self.logger.warning("Failed to load CLIP from cache, loading from HuggingFace...")
+            except Exception as e:
+                self.logger.warning(f"Cache loading failed: {e}, falling back to HuggingFace loading")
+        
+        with memory_cleanup():
+            try:
+                # Load processor first (lighter)
+                self.logger.info("Loading CLIP processor...")
+                self.clip_processor = CLIPProcessor.from_pretrained(model_name)
+                
+                # Load model
+                self.logger.info(f"Loading CLIP model and moving to {self.device}...")
+                start_time = time.time()
+                
+                self.clip_model = CLIPModel.from_pretrained(model_name)
+                self.clip_model.to(self.device)
+                
+                load_time = time.time() - start_time
+                
+                # Test the model with a dummy input
+                self.logger.info("Testing CLIP model...")
+                test_image = Image.new('RGB', (224, 224), color='white')
+                inputs = self.clip_processor(images=test_image, return_tensors="pt")
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                
+                with torch.no_grad():
+                    _ = self.clip_model.get_image_features(**inputs)
+                
+                self.logger.info(f"CLIP model ({model_name}) loaded successfully on {self.device} in {load_time:.2f}s")
+                
+                # Cache the loaded model for future use
+                try:
+                    self.logger.info("Caching CLIP model for faster future loading...")
+                    cache.cache_model(self.clip_model, cache_key, model_name, str(self.device))
+                except Exception as e:
+                    self.logger.warning(f"Failed to cache CLIP model: {e}")
+                
+            except torch.cuda.OutOfMemoryError:
+                self.logger.error("CUDA out of memory loading CLIP model, falling back to CPU")
+                if self.device.type != 'cpu':
+                    self.device = torch.device('cpu')
+                    if self.clip_model is not None:
+                        self.clip_model.to(self.device)
+                        # Try to cache the CPU version too
+                        try:
+                            cache.cache_model(self.clip_model, cache_key, model_name, str(self.device))
+                        except:
+                            pass
+                else:
+                    raise RuntimeError("Insufficient memory to load CLIP model even on CPU")
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize CLIP model: {e}")
     
     def _get_sam_checkpoint_url(self, model_type: str) -> str:
         """Get download URL for SAM checkpoint."""
@@ -134,30 +366,106 @@ class LuggageComparator:
         }
         return urls.get(model_type, urls["vit_b"])
     
+    @retry_on_failure(max_retries=3, delay=5.0, exponential_backoff=True)
     def _download_file(self, url: str, filepath: str):
-        """Download a file from URL."""
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
+        """Download a file from URL with progress tracking and error handling."""
+        self.logger.info(f"Downloading {url} to {filepath}...")
         
-        with open(filepath, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+        try:
+            response = requests.get(url, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            
+            # Create directory if it doesn't exist
+            Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+            
+            # Download with progress tracking
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        
+                        if total_size > 0:
+                            progress = (downloaded / total_size) * 100
+                            if downloaded % (1024 * 1024 * 10) == 0:  # Log every 10MB
+                                self.logger.info(f"Download progress: {progress:.1f}% ({downloaded/1024/1024:.1f}MB/{total_size/1024/1024:.1f}MB)")
+            
+            self.logger.info(f"Download completed: {filepath} ({downloaded/1024/1024:.1f}MB)")
+            
+        except requests.exceptions.Timeout:
+            raise RuntimeError(f"Timeout downloading {url}")
+        except requests.exceptions.ConnectionError:
+            raise RuntimeError(f"Connection error downloading {url}")
+        except requests.exceptions.HTTPError as e:
+            raise RuntimeError(f"HTTP error downloading {url}: {e}")
+        except Exception as e:
+            # Clean up partial download
+            if Path(filepath).exists():
+                Path(filepath).unlink()
+            raise RuntimeError(f"Failed to download {url}: {e}")
     
     def load_image(self, image_path: str) -> np.ndarray:
-        """Load image from file path or URL."""
+        """Load image from file path or URL with robust error handling."""
+        self.logger.debug(f"Loading image: {image_path}")
+        
         try:
             if image_path.startswith(('http://', 'https://')):
-                response = requests.get(image_path)
+                # Handle URL images
+                self.logger.debug("Loading image from URL")
+                response = requests.get(image_path, timeout=30)
+                response.raise_for_status()
+                
+                if len(response.content) == 0:
+                    raise ValueError("Empty image data received from URL")
+                
                 image = Image.open(BytesIO(response.content))
+                
             else:
+                # Handle local file images
+                image_path = Path(image_path)
+                
+                # Validate file before opening
+                if not validate_image_file(image_path):
+                    raise ValueError(f"Invalid or corrupted image file: {image_path}")
+                
                 image = Image.open(image_path)
             
+            # Validate image properties
+            if image.width == 0 or image.height == 0:
+                raise ValueError("Image has zero width or height")
+                
+            if image.width * image.height > 100000000:  # 100MP limit
+                self.logger.warning(f"Very large image ({image.width}x{image.height}), this may cause memory issues")
+            
             # Convert to RGB if needed
+            original_mode = image.mode
             if image.mode != 'RGB':
+                self.logger.debug(f"Converting image from {original_mode} to RGB")
                 image = image.convert('RGB')
             
-            return np.array(image)
+            # Convert to numpy array
+            image_array = np.array(image)
             
+            # Validate the resulting array
+            if image_array.shape[2] != 3:
+                raise ValueError(f"Expected RGB image (3 channels), got {image_array.shape[2]} channels")
+            
+            self.logger.debug(f"Successfully loaded image: {image_array.shape[1]}x{image_array.shape[0]} pixels")
+            return image_array
+            
+        except requests.exceptions.Timeout:
+            raise ValueError(f"Timeout loading image from URL: {image_path}")
+        except requests.exceptions.RequestException as e:
+            raise ValueError(f"Network error loading image from URL {image_path}: {e}")
+        except Image.UnidentifiedImageError:
+            raise ValueError(f"Cannot identify image file (unsupported format): {image_path}")
+        except PermissionError:
+            raise ValueError(f"Permission denied accessing image file: {image_path}")
+        except FileNotFoundError:
+            raise ValueError(f"Image file not found: {image_path}")
         except Exception as e:
             raise ValueError(f"Failed to load image from {image_path}: {e}")
     
@@ -469,13 +777,50 @@ class LuggageComparator:
     def save_database(self, filepath: str):
         """Save embeddings database to file."""
         np.savez(filepath, **self.embeddings_db)
-        print(f"Database saved to {filepath}")
+        self.logger.info(f"Database saved to {filepath}")
     
     def load_database(self, filepath: str):
         """Load embeddings database from file."""
         data = np.load(filepath)
         self.embeddings_db = {key: data[key] for key in data.files}
-        print(f"Database loaded from {filepath} with {len(self.embeddings_db)} images")
+        self.logger.info(f"Database loaded from {filepath} with {len(self.embeddings_db)} images")
+    
+    def cleanup(self):
+        """Clean up resources and free memory."""
+        self.logger.info("Cleaning up LuggageComparator resources...")
+        
+        # Clear embeddings database
+        if hasattr(self, 'embeddings_db'):
+            self.embeddings_db.clear()
+        
+        # Clean up models (they will be cached)
+        if hasattr(self, 'sam_predictor'):
+            self.sam_predictor = None
+        
+        if hasattr(self, 'clip_model'):
+            self.clip_model = None
+            
+        if hasattr(self, 'clip_processor'):
+            self.clip_processor = None
+            
+        if hasattr(self, 'faiss_index'):
+            self.faiss_index = None
+        
+        # Force cleanup
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
+        self.logger.info("LuggageComparator cleanup completed")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        try:
+            if hasattr(self, 'logger'):
+                self.cleanup()
+        except:
+            pass  # Avoid errors during shutdown
 
 
 def main():

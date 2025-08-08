@@ -15,23 +15,41 @@ import argparse
 import sys
 from pathlib import Path
 from multi_luggage_analyzer import MultiLuggageAnalyzer
+from utils import setup_logging, validate_directory, get_image_files, validate_image_file
+from config import get_config_manager, get_config
+
+# Initialize config first
+config_manager = get_config_manager()
+config = get_config()
+
+# Setup logging based on config
+logger = setup_logging(
+    level=config.logging.level,
+    log_file=config.logging.log_file if config.logging.enable_file_logging else None,
+    format_string=config.logging.log_format
+)
 
 
-def get_image_files(folder_path: str) -> list:
-    """Find all image files in the folder."""
-    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']
-    image_files = []
+def get_image_files_with_validation(folder_path: str) -> list:
+    """Find and validate all image files in the folder."""
+    logger.info(f"Searching for images in: {folder_path}")
     
-    folder = Path(folder_path)
-    if not folder.exists():
-        print(f"ERROR: Folder not found: {folder_path}")
+    if not validate_directory(folder_path):
+        logger.error(f"Directory not found or not accessible: {folder_path}")
         return []
     
-    for file_path in folder.iterdir():
-        if file_path.is_file() and file_path.suffix.lower() in image_extensions:
-            image_files.append(str(file_path))
+    # Use utility function that validates images
+    image_files = get_image_files(folder_path)
     
-    return sorted(image_files)
+    if not image_files:
+        logger.warning(f"No valid image files found in {folder_path}")
+        return []
+    
+    logger.info(f"Found {len(image_files)} valid image files")
+    for img_file in image_files:
+        logger.debug(f"Valid image: {Path(img_file).name}")
+    
+    return [str(f) for f in image_files]
 
 
 def print_results_summary(analyzer: MultiLuggageAnalyzer):
@@ -87,7 +105,8 @@ def print_results_summary(analyzer: MultiLuggageAnalyzer):
 
 
 def interactive_mode():
-    """Interactive mode - get input from user."""
+    """Interactive mode - get input from user with input validation."""
+    logger.info("Starting interactive mode")
     print("LUGGAGE ANALYSIS SYSTEM - Interactive Mode")
     print("=" * 40)
     
@@ -122,26 +141,41 @@ def interactive_mode():
             else:
                 print(f"ERROR: File not found: {path}")
     
-    else:
-        print("ERROR: Invalid choice!")
-        return
     
-    if len(image_paths) < 2:
-        print("ERROR: At least 2 photos required!")
+    if len(image_paths) < 1:
+        logger.error("No valid images provided")
+        print("ERROR: No valid images provided!")
         return
+    elif len(image_paths) < 2:
+        logger.warning("Only one image provided")
+        print("WARNING: Only 1 photo provided. You need at least 2 photos to compare luggage.")
+        print("The system will still process this image for feature analysis.")
+        
+        continue_single = input("Continue with single image analysis? (y/n): ").strip().lower()
+        if continue_single not in ['y', 'yes']:
+            return
     
-    # Ask for similarity threshold
+    # Ask for similarity threshold with validation
     print(f"\nWhat is the similarity threshold? (default: 75%)")
-    threshold_input = input("Threshold value (0-100): ").strip()
+    print("Higher values = stricter matching, Lower values = more permissive matching")
     
-    try:
-        threshold = float(threshold_input) if threshold_input else 75.0
-        if not 0 <= threshold <= 100:
-            threshold = 75.0
-            print("WARNING: Invalid value, using default: 75%")
-    except ValueError:
-        threshold = 75.0
-        print("WARNING: Invalid value, using default: 75%")
+    while True:
+        threshold_input = input(f"Threshold value (0-100, default: {config.processing.similarity_threshold}): ").strip()
+        
+        if not threshold_input:
+            threshold = config.processing.similarity_threshold
+            logger.info(f"Using default threshold: {threshold}%")
+            break
+            
+        try:
+            threshold = float(threshold_input)
+            if 0 <= threshold <= 100:
+                logger.info(f"Using threshold: {threshold}%")
+                break
+            else:
+                print("Please enter a value between 0 and 100")
+        except ValueError:
+            print("Please enter a valid number")
     
     # Start analysis
     print(f"\nStarting analysis... ({len(image_paths)} photos, threshold: {threshold}%)")
@@ -162,19 +196,40 @@ def interactive_mode():
         save_report = input("\nWould you like to save detailed report to file? (y/n): ").strip().lower()
         
         if save_report in ['y', 'yes']:
-            output_dir = input("Output folder (default: luggage_results): ").strip()
-            if not output_dir:
-                output_dir = "luggage_results"
+            while True:
+                output_dir = input("Output folder (default: luggage_results): ").strip()
+                if not output_dir:
+                    output_dir = "luggage_results"
+                
+                # Expand user path
+                output_dir = os.path.expanduser(output_dir)
+                
+                # Validate/create output directory
+                if validate_directory(output_dir, create_if_missing=True):
+                    logger.info(f"Saving results to: {output_dir}")
+                    break
+                else:
+                    print(f"Cannot create or access directory: {output_dir}")
+                    print("Please try another path")
             
-            results = analyzer.save_results(output_dir)
-            print(f"\nReports saved:")
-            for key, path in results.items():
-                print(f"   - {os.path.basename(path)}")
+            try:
+                results = analyzer.save_results(output_dir)
+                print(f"\nReports saved to {output_dir}/:")
+                for key, path in results.items():
+                    print(f"   - {Path(path).name}")
+            except Exception as e:
+                logger.error(f"Failed to save results: {e}")
+                print(f"ERROR: Failed to save results: {e}")
         
         print("\nAnalysis complete!")
         
+    except KeyboardInterrupt:
+        logger.info("Analysis interrupted by user")
+        print("\nAnalysis interrupted by user")
     except Exception as e:
-        print(f"ERROR: Error during analysis: {e}")
+        logger.error(f"Analysis failed: {e}")
+        print(f"ERROR: Analysis failed: {e}")
+        print("Check the logs for more details")
 
 
 def main():
@@ -212,15 +267,15 @@ Examples:
     parser.add_argument(
         "--threshold", "-t",
         type=float,
-        default=75.0,
-        help="Similarity threshold percentage (0-100, default: 75)"
+        default=config.processing.similarity_threshold,
+        help=f"Similarity threshold percentage (0-100, default: {config.processing.similarity_threshold})"
     )
     
     parser.add_argument(
         "--output", "-o",
         type=str,
-        default="luggage_results",
-        help="Output folder (default: luggage_results)"
+        default=config.output.default_output_dir,
+        help=f"Output folder (default: {config.output.default_output_dir})"
     )
     
     parser.add_argument(
@@ -229,39 +284,83 @@ Examples:
         help="Don't save report, only print to console"
     )
     
+    parser.add_argument(
+        "--ultra-precise",
+        action="store_true", 
+        help="Enable ultra-precise mode (3-5x slower but maximum accuracy)"
+    )
+    
     args = parser.parse_args()
     
-    # Argument validation
+    # Validate arguments
+    if args.threshold < 0 or args.threshold > 100:
+        logger.error(f"Invalid threshold: {args.threshold}")
+        print(f"ERROR: Threshold must be between 0 and 100, got {args.threshold}")
+        return
+    
     if args.interactive:
+        logger.info("Starting in interactive mode")
         interactive_mode()
         return
     
     if not args.folder and not args.files:
+        logger.error("No photo source specified")
         print("ERROR: You must specify at least one photo source!")
         print("Help: python analyze_luggage.py --help")
         print("Interactive mode: python analyze_luggage.py --interactive")
         return
     
-    # Prepare photo list
+    # Prepare and validate photo list
     image_paths = []
     
     if args.folder:
-        folder_images = get_image_files(args.folder)
+        logger.info(f"Processing folder: {args.folder}")
+        folder_path = os.path.expanduser(args.folder)
+        
+        if not validate_directory(folder_path):
+            logger.error(f"Invalid folder: {folder_path}")
+            print(f"ERROR: Folder not found or not accessible: {folder_path}")
+            return
+            
+        folder_images = get_image_files_with_validation(folder_path)
         image_paths.extend(folder_images)
-        print(f"Found {len(folder_images)} photos from {args.folder}")
+        
+        if folder_images:
+            logger.info(f"Found {len(folder_images)} valid photos from {args.folder}")
+            print(f"Found {len(folder_images)} valid photos from {args.folder}")
+        else:
+            logger.warning(f"No valid images found in folder: {folder_path}")
     
     if args.files:
+        logger.info(f"Processing {len(args.files)} individual files")
+        valid_files = 0
+        
         for file_path in args.files:
-            if os.path.exists(file_path):
-                image_paths.append(file_path)
+            expanded_path = os.path.expanduser(file_path)
+            
+            if validate_image_file(expanded_path):
+                image_paths.append(expanded_path)
+                valid_files += 1
+                logger.debug(f"Valid file: {Path(expanded_path).name}")
             else:
-                print(f"WARNING: File not found: {file_path}")
+                logger.warning(f"Invalid or missing file: {file_path}")
+                print(f"WARNING: Invalid or missing file: {file_path}")
+        
+        if valid_files > 0:
+            logger.info(f"Found {valid_files} valid files out of {len(args.files)} provided")
     
-    if len(image_paths) < 2:
-        print("ERROR: At least 2 photos required!")
+    if len(image_paths) < 1:
+        logger.error("No valid images found")
+        print("ERROR: No valid image files found!")
         return
+    elif len(image_paths) < 2:
+        logger.warning("Only one valid image found")
+        print("WARNING: Only 1 valid photo found. You need at least 2 photos for comparison.")
+        print("The system will still process this image for feature analysis.")
+        
+    logger.info(f"Total valid images to process: {len(image_paths)}")
     
-    print(f"{len(image_paths)} photos will be analyzed...")
+    print(f"{len(image_paths)} photos will be analyzed with {args.threshold}% similarity threshold...")
     
     # Start analysis
     analyzer = MultiLuggageAnalyzer(similarity_threshold=args.threshold)
@@ -281,8 +380,14 @@ Examples:
             results = analyzer.save_results(args.output)
             print(f"\nDetailed reports saved to: {args.output}/")
             
+    except KeyboardInterrupt:
+        logger.info("Analysis interrupted by user")
+        print("\nAnalysis interrupted by user")
+        sys.exit(0)
     except Exception as e:
-        print(f"ERROR: Error during analysis: {e}")
+        logger.error(f"Analysis failed: {e}")
+        print(f"ERROR: Analysis failed: {e}")
+        print("Check the logs for more details")
         sys.exit(1)
 
 

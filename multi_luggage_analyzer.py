@@ -9,14 +9,19 @@ import os
 import json
 import numpy as np
 import cv2
+import gc
+import time
 from datetime import datetime
 from typing import List, Dict, Tuple, Any, Optional
 from collections import defaultdict, Counter
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend to save memory
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
 
 from luggage_comparator import LuggageComparator
+from utils import setup_logging, memory_cleanup, ProgressTracker, format_file_size
 
 
 class LuggageFeatureAnalyzer:
@@ -386,13 +391,27 @@ class LuggageFeatureAnalyzer:
 class MultiLuggageAnalyzer:
     """Main class for analyzing multiple luggage photos."""
     
-    def __init__(self, similarity_threshold: float = 85.0):
+    def __init__(self, similarity_threshold: float = 85.0, enable_logging: bool = True):
         """
         Args:
             similarity_threshold: Main threshold for considering luggage as same (%)
+            enable_logging: Enable detailed logging
         """
-        self.comparator = LuggageComparator()
-        self.feature_analyzer = LuggageFeatureAnalyzer()
+        # Setup logging
+        if enable_logging:
+            self.logger = setup_logging()
+        else:
+            import logging
+            self.logger = logging.getLogger('luggage_analysis')
+            self.logger.disabled = True
+            
+        self.logger.info(f"Initializing MultiLuggageAnalyzer with threshold {similarity_threshold}%")
+        
+        # Initialize with memory cleanup
+        with memory_cleanup():
+            self.comparator = LuggageComparator(enable_logging=enable_logging)
+            self.feature_analyzer = LuggageFeatureAnalyzer()
+            
         self.similarity_threshold = similarity_threshold
         
         # Dynamic thresholds for different similarity types
@@ -403,68 +422,128 @@ class MultiLuggageAnalyzer:
             'fallback': similarity_threshold - 20        # 65% - fallback for difficult cases
         }
         
+        # Data storage with memory tracking
         self.processed_images = {}
         self.similarity_matrix = None
         self.groups = []
+        self._memory_usage = {'images': 0, 'embeddings': 0, 'matrix': 0}
+        
+        self.logger.info("MultiLuggageAnalyzer initialized successfully")
         
     def process_images(self, image_paths: List[str]) -> Dict[str, Any]:
-        """Process all images and extract features."""
-        print(f"Processing: {len(image_paths)} photos...")
+        """Process all images and extract features with memory management."""
+        self.logger.info(f"Processing {len(image_paths)} photos...")
+        
+        # Initialize progress tracker
+        progress = ProgressTracker(len(image_paths), "Image processing")
+        
+        processed_count = 0
+        skipped_count = 0
         
         for i, image_path in enumerate(image_paths):
+            self.logger.debug(f"Processing image {i+1}/{len(image_paths)}: {os.path.basename(image_path)}")
+            
             if not os.path.exists(image_path):
-                print(f"⚠ File not found: {image_path}")
+                self.logger.warning(f"File not found: {image_path}")
+                progress.update(1, f"Skipped: {os.path.basename(image_path)} (not found)")
+                skipped_count += 1
                 continue
             
-            try:
-                # Load image
-                image = self.comparator.load_image(image_path)
+            # Process each image with memory cleanup
+            with memory_cleanup():
+                try:
+                    # Load image with size check
+                    image = self.comparator.load_image(image_path)
+                    
+                    # Track memory usage
+                    image_size = image.nbytes
+                    self._memory_usage['images'] += image_size
+                    
+                    # STEP 1: Detect if this is luggage
+                    luggage_detection = self.comparator.detect_luggage(image, threshold=0.7)
+                    
+                    if not luggage_detection['is_luggage']:
+                        self.logger.info(f"Skipped (not luggage): {os.path.basename(image_path)} - {luggage_detection['reason']}")
+                        progress.update(1, f"Skipped: {os.path.basename(image_path)} (not luggage)")
+                        skipped_count += 1
+                        # Clean up image from memory
+                        del image
+                        self._memory_usage['images'] -= image_size
+                        continue
+                    
+                    self.logger.debug(f"Luggage detected: {os.path.basename(image_path)} (confidence: {luggage_detection['confidence']:.1%})")
+                    
+                    # SAM segmentation with memory management
+                    mask = None
+                    if self.comparator.sam_predictor is not None:
+                        mask = self.comparator.segment_luggage(image)
+                    
+                    # Extract embedding (this might reload the image internally)
+                    embedding = self.comparator.process_image(image_path)
+                    embedding_size = embedding.nbytes
+                    self._memory_usage['embeddings'] += embedding_size
+                    
+                    # Analyze features
+                    color_features = self.feature_analyzer.analyze_color(image, mask)
+                    size_features = self.feature_analyzer.analyze_size(mask)
+                    texture_features = self.feature_analyzer.analyze_texture(image, mask)
+                    brand_features = self.feature_analyzer.detect_brand_features(image, mask)
+                    
+                    # Clean up large objects from memory
+                    del image  # Free the large image array
+                    self._memory_usage['images'] -= image_size
                 
-                # STEP 1: Detect if this is luggage
-                luggage_detection = self.comparator.detect_luggage(image, threshold=0.7)
-                
-                if not luggage_detection['is_luggage']:
-                    print(f"⚠ Skipped (not luggage): {os.path.basename(image_path)} - {luggage_detection['reason']}")
-                    continue
-                
-                print(f"✓ Luggage detected: {os.path.basename(image_path)} (confidence: {luggage_detection['confidence']:.1%})")
-                
-                # SAM segmentation
-                mask = None
-                if self.comparator.sam_predictor is not None:
-                    mask = self.comparator.segment_luggage(image)
-                
-                # Extract embedding
-                embedding = self.comparator.process_image(image_path)
-                
-                # Analyze features
-                color_features = self.feature_analyzer.analyze_color(image, mask)
-                size_features = self.feature_analyzer.analyze_size(mask)
-                texture_features = self.feature_analyzer.analyze_texture(image, mask)
-                brand_features = self.feature_analyzer.detect_brand_features(image, mask)
-                
-                # Store results
-                image_id = f"img_{i:03d}_{os.path.basename(image_path)}"
-                self.processed_images[image_id] = {
-                    'path': image_path,
-                    'embedding': embedding,
-                    'luggage_detection': luggage_detection,
+                    # Store results (keep only essential data)
+                    image_id = f"img_{i:03d}_{os.path.basename(image_path)}"
+                    self.processed_images[image_id] = {
+                        'path': image_path,
+                        'embedding': embedding,
+                        'luggage_detection': luggage_detection,
                     'features': {
                         'color': color_features,
                         'size': size_features,
                         'texture': texture_features,
                         'brand': brand_features
                     },
-                    'mask': mask
-                }
-                
-                print(f"✓ Processed: {image_id}")
-                
-            except Exception as e:
-                print(f"✗ Error ({image_path}): {e}")
+                        'mask': None  # Don't store masks to save memory - can regenerate if needed
+                    }
+                    
+                    processed_count += 1
+                    progress.update(1, f"Processed: {os.path.basename(image_path)}")
+                    
+                    # Periodic memory cleanup
+                    if processed_count % 5 == 0:
+                        gc.collect()
+                        self._log_memory_usage()
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing {image_path}: {e}")
+                    progress.update(1, f"Error: {os.path.basename(image_path)}")
+                    skipped_count += 1
         
-        print(f"Total processed: {len(self.processed_images)} photos")
+        # Final cleanup and summary
+        progress.finish()
+        gc.collect()
+        
+        self.logger.info(f"Processing complete: {processed_count} processed, {skipped_count} skipped")
+        self._log_memory_usage()
+        
+        if processed_count == 0:
+            raise ValueError("No valid luggage images were processed")
+            
         return self.processed_images
+    
+    def _log_memory_usage(self):
+        """Log current memory usage statistics."""
+        total_images = self._memory_usage['images']
+        total_embeddings = self._memory_usage['embeddings'] 
+        total_matrix = self._memory_usage['matrix']
+        
+        self.logger.info(
+            f"Memory usage - Images: {format_file_size(total_images)}, "
+            f"Embeddings: {format_file_size(total_embeddings)}, "
+            f"Matrix: {format_file_size(total_matrix)}"
+        )
     
     def calculate_multi_level_similarity(self, img1_id: str, img2_id: str) -> Dict[str, float]:
         """Calculate multi-level similarity between two images."""
@@ -596,29 +675,56 @@ class MultiLuggageAnalyzer:
         return False  # Default to strict matching for unlisted combinations
 
     def calculate_similarity_matrix(self) -> np.ndarray:
-        """Calculate multi-level similarity matrix between all photos."""
+        """Calculate multi-level similarity matrix between all photos with memory management."""
         image_ids = list(self.processed_images.keys())
         n = len(image_ids)
         
         if n == 0:
             return np.array([])
         
-        # Initialize similarity matrix
-        similarity_matrix = np.zeros((n, n))
+        self.logger.info(f"Calculating similarity matrix for {n} images ({n*n} comparisons)...")
         
-        # Calculate similarities
-        print("Calculating multi-level similarities...")
+        # Initialize similarity matrix with memory tracking
+        similarity_matrix = np.zeros((n, n), dtype=np.float32)  # Use float32 to save memory
+        matrix_size = similarity_matrix.nbytes
+        self._memory_usage['matrix'] = matrix_size
+        self.logger.info(f"Similarity matrix size: {format_file_size(matrix_size)}")
+        
+        # Calculate total comparisons (only upper triangle)
+        total_comparisons = (n * (n - 1)) // 2
+        progress = ProgressTracker(total_comparisons, "Similarity calculation")
+        
+        # Calculate similarities with memory cleanup
+        comparison_count = 0
         for i in range(n):
             for j in range(n):
                 if i == j:
                     similarity_matrix[i][j] = 100.0  # Same image
                 elif i < j:  # Calculate only upper triangle
-                    similarities = self.calculate_multi_level_similarity(image_ids[i], image_ids[j])
-                    combined_sim = self.calculate_combined_similarity(similarities)
-                    similarity_matrix[i][j] = combined_sim
-                    similarity_matrix[j][i] = combined_sim  # Symmetric matrix
+                    with memory_cleanup():
+                        similarities = self.calculate_multi_level_similarity(image_ids[i], image_ids[j])
+                        combined_sim = self.calculate_combined_similarity(similarities)
+                        similarity_matrix[i][j] = combined_sim
+                        similarity_matrix[j][i] = combined_sim  # Symmetric matrix
+                        
+                        comparison_count += 1
+                        progress.update(1, f"Compared {image_ids[i]} vs {image_ids[j]} ({combined_sim:.1f}%)")
+                        
+                        # Periodic cleanup
+                        if comparison_count % 10 == 0:
+                            gc.collect()
         
+        progress.finish()
         self.similarity_matrix = similarity_matrix
+        
+        # Log matrix statistics
+        non_diagonal = similarity_matrix[similarity_matrix != 100.0]
+        if len(non_diagonal) > 0:
+            self.logger.info(
+                f"Similarity matrix completed - Min: {np.min(non_diagonal):.1f}%, "
+                f"Max: {np.max(non_diagonal):.1f}%, Mean: {np.mean(non_diagonal):.1f}%"
+            )
+        
         return similarity_matrix
     
     def group_similar_luggage(self) -> List[Dict[str, Any]]:
@@ -1062,6 +1168,37 @@ class MultiLuggageAnalyzer:
                 f.write("-" * 20 + "\n")
                 for img in report['individual_images']:
                     f.write(f"- {img['image_id']}\n")
+    
+    def cleanup(self):
+        """Clean up resources and free memory."""
+        self.logger.info("Cleaning up MultiLuggageAnalyzer resources...")
+        
+        # Clear large data structures
+        if hasattr(self, 'processed_images'):
+            self.processed_images.clear()
+            
+        if hasattr(self, 'similarity_matrix') and self.similarity_matrix is not None:
+            del self.similarity_matrix
+            self.similarity_matrix = None
+            
+        if hasattr(self, 'groups'):
+            self.groups.clear()
+            
+        # Reset memory tracking
+        self._memory_usage = {'images': 0, 'embeddings': 0, 'matrix': 0}
+        
+        # Force garbage collection
+        gc.collect()
+        
+        self.logger.info("Cleanup completed")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup on object deletion."""
+        if hasattr(self, 'logger'):
+            try:
+                self.cleanup()
+            except:
+                pass  # Avoid errors during shutdown
 
 
 def main():
@@ -1098,6 +1235,9 @@ def main():
     results = analyzer.save_results()
     
     print(f"\nAnalysis complete! Found {len(groups)} groups.")
+    
+    # Clean up resources
+    analyzer.cleanup()
 
 
 if __name__ == "__main__":
