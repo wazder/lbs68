@@ -188,6 +188,7 @@ sam_vit_*.pth
 *.pth
 models/
 checkpoints/
+model_cache/
 
 # Analysis data and results
 input/*

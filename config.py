@@ -241,4 +241,163 @@ class ConfigManager:
                 config_dict = file_config
                 logger.info(f"Loaded configuration from {self.config_path}")
         
-        # Apply environment variable overrides\n        config_dict = self._apply_env_overrides(config_dict)\n        \n        # Create configuration object with defaults for missing values\n        try:\n            # Convert nested dict to dataclass\n            model_config = ModelConfig(**config_dict.get('model', {}))\n            processing_config = ProcessingConfig(**config_dict.get('processing', {}))\n            logging_config = LoggingConfig(**config_dict.get('logging', {}))\n            cache_config = CacheConfig(**config_dict.get('cache', {}))\n            output_config = OutputConfig(**config_dict.get('output', {}))\n            \n            config = LuggageAnalysisConfig(\n                model=model_config,\n                processing=processing_config,\n                logging=logging_config,\n                cache=cache_config,\n                output=output_config\n            )\n            \n            logger.info(\"Configuration loaded successfully\")\n            return config\n            \n        except Exception as e:\n            logger.error(f\"Failed to parse configuration: {e}\")\n            logger.info(\"Using default configuration\")\n            return self._get_default_config()\n    \n    def save_config(self, file_path: Optional[str] = None) -> bool:\n        \"\"\"Save current configuration to file.\"\"\"\n        if file_path:\n            save_path = Path(file_path)\n        elif self.config_path:\n            save_path = self.config_path\n        else:\n            save_path = Path(\"config.yaml\")\n        \n        try:\n            # Create directory if it doesn't exist\n            save_path.parent.mkdir(parents=True, exist_ok=True)\n            \n            # Convert config to dict\n            config_dict = {\n                'model': asdict(self.config.model),\n                'processing': asdict(self.config.processing),\n                'logging': asdict(self.config.logging),\n                'cache': asdict(self.config.cache),\n                'output': asdict(self.config.output)\n            }\n            \n            # Save based on file extension\n            with open(save_path, 'w', encoding='utf-8') as f:\n                if save_path.suffix.lower() in ['.yaml', '.yml']:\n                    yaml.dump(config_dict, f, default_flow_style=False, indent=2)\n                else:\n                    json.dump(config_dict, f, indent=2)\n            \n            logger.info(f\"Configuration saved to {save_path}\")\n            return True\n            \n        except Exception as e:\n            logger.error(f\"Failed to save configuration to {save_path}: {e}\")\n            return False\n    \n    def get_config(self) -> LuggageAnalysisConfig:\n        \"\"\"Get current configuration.\"\"\"\n        return self.config\n    \n    def update_config(self, **kwargs) -> bool:\n        \"\"\"Update configuration values.\"\"\"\n        try:\n            for key, value in kwargs.items():\n                if hasattr(self.config, key):\n                    setattr(self.config, key, value)\n                    logger.info(f\"Updated config: {key} = {value}\")\n                else:\n                    logger.warning(f\"Unknown config key: {key}\")\n            return True\n        except Exception as e:\n            logger.error(f\"Failed to update configuration: {e}\")\n            return False\n    \n    def create_example_config(self, file_path: str = \"config.example.yaml\") -> bool:\n        \"\"\"Create an example configuration file.\"\"\"\n        try:\n            example_config = self._get_default_config()\n            \n            # Add comments to the example\n            config_dict = {\n                'model': {\n                    'sam_model_type': 'vit_b',  # SAM model size: vit_b, vit_l, vit_h\n                    'sam_checkpoint_path': None,  # Path to SAM checkpoint (auto-download if null)\n                    'clip_model_name': 'openai/clip-vit-base-patch32',  # CLIP model from HuggingFace\n                    'device': 'auto',  # Device: auto, cpu, cuda, mps\n                    'enable_caching': True,  # Enable model caching for faster loading\n                    'cache_dir': 'model_cache'  # Directory for cached models\n                },\n                'processing': {\n                    'similarity_threshold': 75.0,  # Similarity threshold (0-100)\n                    'luggage_detection_threshold': 0.7,  # Luggage detection threshold (0-1)\n                    'batch_size': 1,  # Batch size for processing\n                    'max_image_size': 2048,  # Maximum image size in pixels\n                    'enable_segmentation': True,  # Enable SAM segmentation\n                    'enable_feature_analysis': True  # Enable detailed feature analysis\n                },\n                'logging': {\n                    'level': 'INFO',  # Logging level: DEBUG, INFO, WARNING, ERROR\n                    'log_file': None,  # Log file path (null for console only)\n                    'log_format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',\n                    'enable_file_logging': False,  # Enable logging to file\n                    'max_log_size_mb': 10,  # Maximum log file size in MB\n                    'backup_count': 3  # Number of backup log files to keep\n                },\n                'cache': {\n                    'max_age_days': 30,  # Maximum age of cached models in days\n                    'max_size_gb': 5.0,  # Maximum cache size in GB\n                    'auto_cleanup': True,  # Automatically cleanup old cache\n                    'cleanup_interval_hours': 24  # Cache cleanup interval in hours\n                },\n                'output': {\n                    'default_output_dir': 'output',  # Default output directory\n                    'create_detailed_reports': True,  # Create detailed JSON reports\n                    'create_summary_reports': True,  # Create human-readable summaries\n                    'save_similarity_matrix': True,  # Save similarity matrix CSV\n                    'save_processed_images': False,  # Save processed images\n                    'archive_old_results': True,  # Automatically archive old results\n                    'archive_age_days': 7  # Age threshold for archiving in days\n                }\n            }\n            \n            with open(file_path, 'w', encoding='utf-8') as f:\n                f.write(\"# Luggage Analysis System Configuration\\n\")\n                f.write(\"# You can copy this to config.yaml and modify as needed\\n\\n\")\n                yaml.dump(config_dict, f, default_flow_style=False, indent=2)\n            \n            logger.info(f\"Example configuration created: {file_path}\")\n            return True\n            \n        except Exception as e:\n            logger.error(f\"Failed to create example config: {e}\")\n            return False\n\n\n# Global config manager instance\n_global_config_manager = None\n\n\ndef get_config_manager(config_path: Optional[str] = None) -> ConfigManager:\n    \"\"\"Get global configuration manager instance.\"\"\"\n    global _global_config_manager\n    if _global_config_manager is None:\n        _global_config_manager = ConfigManager(config_path)\n    return _global_config_manager\n\n\ndef get_config() -> LuggageAnalysisConfig:\n    \"\"\"Get current configuration.\"\"\"\n    return get_config_manager().get_config()
+        # Apply environment variable overrides
+        config_dict = self._apply_env_overrides(config_dict)
+        
+        # Create configuration object with defaults for missing values
+        try:
+            # Convert nested dict to dataclass
+            model_config = ModelConfig(**config_dict.get('model', {}))
+            processing_config = ProcessingConfig(**config_dict.get('processing', {}))
+            logging_config = LoggingConfig(**config_dict.get('logging', {}))
+            cache_config = CacheConfig(**config_dict.get('cache', {}))
+            output_config = OutputConfig(**config_dict.get('output', {}))
+            
+            config = LuggageAnalysisConfig(
+                model=model_config,
+                processing=processing_config,
+                logging=logging_config,
+                cache=cache_config,
+                output=output_config
+            )
+            
+            logger.info("Configuration loaded successfully")
+            return config
+            
+        except Exception as e:
+            logger.error(f"Failed to parse configuration: {e}")
+            logger.info("Using default configuration")
+            return self._get_default_config()
+    
+    def save_config(self, file_path: Optional[str] = None) -> bool:
+        """Save current configuration to file."""
+        if file_path:
+            save_path = Path(file_path)
+        elif self.config_path:
+            save_path = self.config_path
+        else:
+            save_path = Path("config.yaml")
+        
+        try:
+            # Create directory if it doesn't exist
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Convert config to dict
+            config_dict = {
+                'model': asdict(self.config.model),
+                'processing': asdict(self.config.processing),
+                'logging': asdict(self.config.logging),
+                'cache': asdict(self.config.cache),
+                'output': asdict(self.config.output)
+            }
+            
+            # Save based on file extension
+            with open(save_path, 'w', encoding='utf-8') as f:
+                if save_path.suffix.lower() in ['.yaml', '.yml']:
+                    yaml.dump(config_dict, f, default_flow_style=False, indent=2)
+                else:
+                    json.dump(config_dict, f, indent=2)
+            
+            logger.info(f"Configuration saved to {save_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save configuration to {save_path}: {e}")
+            return False
+    
+    def get_config(self) -> LuggageAnalysisConfig:
+        """Get current configuration."""
+        return self.config
+    
+    def update_config(self, **kwargs) -> bool:
+        """Update configuration values."""
+        try:
+            for key, value in kwargs.items():
+                if hasattr(self.config, key):
+                    setattr(self.config, key, value)
+                    logger.info(f"Updated config: {key} = {value}")
+                else:
+                    logger.warning(f"Unknown config key: {key}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update configuration: {e}")
+            return False
+    
+    def create_example_config(self, file_path: str = "config.example.yaml") -> bool:
+        """Create an example configuration file."""
+        try:
+            example_config = self._get_default_config()
+            
+            # Add comments to the example
+            config_dict = {
+                'model': {
+                    'sam_model_type': 'vit_b',  # SAM model size: vit_b, vit_l, vit_h
+                    'sam_checkpoint_path': None,  # Path to SAM checkpoint (auto-download if null)
+                    'clip_model_name': 'openai/clip-vit-base-patch32',  # CLIP model from HuggingFace
+                    'device': 'auto',  # Device: auto, cpu, cuda, mps
+                    'enable_caching': True,  # Enable model caching for faster loading
+                    'cache_dir': 'model_cache'  # Directory for cached models
+                },
+                'processing': {
+                    'similarity_threshold': 95.0,  # Similarity threshold (0-100) - Ultra-precise default
+                    'luggage_detection_threshold': 0.8,  # Luggage detection threshold (0-1)
+                    'batch_size': 1,  # Batch size for processing
+                    'max_image_size': 2048,  # Maximum image size in pixels
+                    'enable_segmentation': True,  # Enable SAM segmentation
+                    'enable_feature_analysis': True,  # Enable detailed feature analysis
+                    'enable_geometric_verification': True,  # Enable geometric verification
+                    'enable_ensemble_voting': True  # Enable ensemble voting
+                },
+                'logging': {
+                    'level': 'INFO',  # Logging level: DEBUG, INFO, WARNING, ERROR
+                    'log_file': None,  # Log file path (null for console only)
+                    'log_format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    'enable_file_logging': False,  # Enable logging to file
+                    'max_log_size_mb': 10,  # Maximum log file size in MB
+                    'backup_count': 3  # Number of backup log files to keep
+                },
+                'cache': {
+                    'max_age_days': 30,  # Maximum age of cached models in days
+                    'max_size_gb': 5.0,  # Maximum cache size in GB
+                    'auto_cleanup': True,  # Automatically cleanup old cache
+                    'cleanup_interval_hours': 24  # Cache cleanup interval in hours
+                },
+                'output': {
+                    'default_output_dir': 'output',  # Default output directory
+                    'create_detailed_reports': True,  # Create detailed JSON reports
+                    'create_summary_reports': True,  # Create human-readable summaries
+                    'save_similarity_matrix': True,  # Save similarity matrix CSV
+                    'save_processed_images': False,  # Save processed images
+                    'archive_old_results': True,  # Automatically archive old results
+                    'archive_age_days': 7  # Age threshold for archiving in days
+                }
+            }
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write("# Luggage Analysis System Configuration\n")
+                f.write("# You can copy this to config.yaml and modify as needed\n\n")
+                yaml.dump(config_dict, f, default_flow_style=False, indent=2)
+            
+            logger.info(f"Example configuration created: {file_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to create example config: {e}")
+            return False
+
+
+# Global config manager instance
+_global_config_manager = None
+
+
+def get_config_manager(config_path: Optional[str] = None) -> ConfigManager:
+    """Get global configuration manager instance."""
+    global _global_config_manager
+    if _global_config_manager is None:
+        _global_config_manager = ConfigManager(config_path)
+    return _global_config_manager
+
+
+def get_config() -> LuggageAnalysisConfig:
+    """Get current configuration."""
+    return get_config_manager().get_config()
