@@ -26,7 +26,7 @@ class LuggageAnalyzer:
     Main Luggage Analyzer with Advanced Precision
     """
     
-    def __init__(self, similarity_threshold: float = 87.0):
+    def __init__(self, similarity_threshold: float = 86.0):
         self.logger = setup_logging()
         self.comparator = LuggageComparator()
         self.processed_images = {}
@@ -416,7 +416,8 @@ class LuggageAnalyzer:
     
     def group_with_ultra_precision(self, threshold: float = 87.0, adaptive=True):
         """Ultra-precision grouping."""
-        self.logger.info("ULTRA-PRECISION GROUPING STARTING")
+        self.logger.info("ULTRA-PRECISION GROUPING STARTING with IMPROVED ALGORITHM v2.0")
+        self.logger.info(f"Using threshold: {threshold:.1f}% with strict criteria (min: {threshold*0.95:.1f}%, avg: {threshold*1.02:.1f}%)")
         
         image_ids = list(self.processed_images.keys())
         n_images = len(image_ids)
@@ -470,8 +471,9 @@ class LuggageAnalyzer:
                 min_similarity = min(similarities_to_group)
                 avg_similarity = np.mean(similarities_to_group)
                 
-                # Stricter criteria: minimum similarity must be high AND average must be very high
-                if min_similarity >= (threshold * 0.85) and avg_similarity >= threshold:
+                # ULTRA-STRICT criteria: Both minimum and average must be very high
+                # This prevents different luggage types from being grouped together
+                if min_similarity >= (threshold * 0.95) and avg_similarity >= (threshold * 1.02):
                     current_group.append(image_ids[j])
                     used_images.add(image_ids[j])
             
@@ -510,8 +512,8 @@ class LuggageAnalyzer:
                 self.groups.append(single_group)
                 self.logger.info(f"Added ungrouped image as individual group: {image_id}")
         
-        # Post-processing: Conservative group merging only for very high similarity
-        self._merge_similar_groups(threshold * 0.98)  # Much higher threshold to prevent incorrect merging
+        # Post-processing: EXTREMELY conservative group merging
+        self._merge_similar_groups(threshold * 1.05)  # Only merge if similarity exceeds original threshold
         
         # Final verification - ensure we have all images
         final_grouped_images = set()
