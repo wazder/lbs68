@@ -12,7 +12,7 @@ def main():
     print("=" * 40)
     
     # Initialize analyzer with optimal settings
-    analyzer = LuggageAnalyzer(similarity_threshold=87.0)
+    analyzer = LuggageAnalyzer(similarity_threshold=35.0)
     
     # Get images from input folder
     image_files = [str(f) for f in get_image_files('input')]
