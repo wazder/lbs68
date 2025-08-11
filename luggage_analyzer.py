@@ -26,7 +26,7 @@ class LuggageAnalyzer:
     Main Luggage Analyzer with Advanced Precision
     """
     
-    def __init__(self, similarity_threshold: float = 85.0):
+    def __init__(self, similarity_threshold: float = 90.0):
         self.logger = setup_logging()
         self.comparator = LuggageComparator()
         self.processed_images = {}
@@ -53,7 +53,7 @@ class LuggageAnalyzer:
         self.process_images(image_paths)
         
         # Group similar images
-        self.group_with_ultra_precision(self.similarity_threshold, self.adaptive_threshold)
+        self.group_with_ultra_precision(self.similarity_threshold, adaptive=False)
         
         # Return results
         return {
@@ -65,7 +65,7 @@ class LuggageAnalyzer:
         
     def group_similar_luggage(self):
         """Compatibility method for old interface."""
-        return self.group_with_ultra_precision(self.similarity_threshold, self.adaptive_threshold)
+        return self.group_with_ultra_precision(self.similarity_threshold, adaptive=False)
         
     def process_images(self, image_paths: List[str]):
         """Advanced precision image processing."""
@@ -414,7 +414,7 @@ class LuggageAnalyzer:
         # DISABLED: Too slow, causing system hang
         return 0
     
-    def group_with_ultra_precision(self, threshold: float = 85.0, adaptive=True):
+    def group_with_ultra_precision(self, threshold: float = 90.0, adaptive=True):
         """Ultra-precision grouping."""
         self.logger.info(f"ULTRA-PRECISION GROUPING STARTING with PURE VISUAL SIMILARITY v4.0")
         self.logger.info(f"Using pure visual similarity threshold: {threshold:.1f}%")
@@ -431,15 +431,23 @@ class LuggageAnalyzer:
                 similarity_matrix[i, j] = similarity
                 similarity_matrix[j, i] = similarity
         
+        # Debug: Print similarity statistics
+        similarities_flat = similarity_matrix[similarity_matrix > 0].flatten()
+        mean_sim = np.mean(similarities_flat)
+        std_sim = np.std(similarities_flat)
+        max_sim = np.max(similarities_flat)
+        min_sim = np.min(similarities_flat)
+        
+        self.logger.info(f"SIMILARITY STATISTICS:")
+        self.logger.info(f"  Mean: {mean_sim:.1f}%, Std: {std_sim:.1f}%")
+        self.logger.info(f"  Min: {min_sim:.1f}%, Max: {max_sim:.1f}%")
+        self.logger.info(f"  Using threshold: {threshold:.1f}%")
+        
         # Adaptive threshold based on similarity distribution
         if adaptive:
-            similarities_flat = similarity_matrix[similarity_matrix > 0].flatten()
-            mean_sim = np.mean(similarities_flat)
-            std_sim = np.std(similarities_flat)
-            
             # Adjust threshold based on data distribution
             adaptive_threshold = min(threshold, mean_sim + 1.5 * std_sim)
-            # self.logger.info(f"Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
+            self.logger.info(f"Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
             threshold = adaptive_threshold
         
         # Create groups using strict threshold-based approach 
@@ -474,6 +482,8 @@ class LuggageAnalyzer:
                 # PURE VISUAL MODE: More flexible for same luggage from different angles
                 min_threshold = threshold * 0.80  # 80% of threshold for weakest link
                 avg_threshold = threshold * 0.90  # 90% of threshold for average
+                
+                self.logger.debug(f"Comparing {image_ids[j]}: min={min_similarity:.1f}% (need {min_threshold:.1f}%), avg={avg_similarity:.1f}% (need {avg_threshold:.1f}%)")
                 
                 if min_similarity >= min_threshold and avg_similarity >= avg_threshold:
                     current_group.append(image_ids[j])
