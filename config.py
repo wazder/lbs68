@@ -29,7 +29,7 @@ class ModelConfig:
 @dataclass
 class ProcessingConfig:
     """Configuration for advanced precision processing settings."""
-    similarity_threshold: float = 95.0  # High threshold for strict grouping
+    similarity_threshold: float = 96.0  # Very high threshold for ultra-strict grouping
     luggage_detection_threshold: float = 0.8  # Higher precision
     batch_size: int = 1
     max_image_size: int = 2048

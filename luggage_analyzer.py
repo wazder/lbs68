@@ -26,7 +26,7 @@ class LuggageAnalyzer:
     Main Luggage Analyzer with Advanced Precision
     """
     
-    def __init__(self, similarity_threshold: float = 95.0):
+    def __init__(self, similarity_threshold: float = 96.0):
         self.logger = setup_logging()
         self.comparator = LuggageComparator()
         self.processed_images = {}
@@ -414,7 +414,7 @@ class LuggageAnalyzer:
         # DISABLED: Too slow, causing system hang
         return 0
     
-    def group_with_ultra_precision(self, threshold: float = 95.0, adaptive=True):
+    def group_with_ultra_precision(self, threshold: float = 96.0, adaptive=True):
         """Ultra-precision grouping."""
         self.logger.info(f"ULTRA-PRECISION GROUPING STARTING with PURE VISUAL SIMILARITY v4.0")
         self.logger.info(f"Using pure visual similarity threshold: {threshold:.1f}%")
