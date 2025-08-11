@@ -416,8 +416,8 @@ class LuggageAnalyzer:
     
     def group_with_ultra_precision(self, threshold: float = 87.0, adaptive=True):
         """Ultra-precision grouping."""
-        self.logger.info("ULTRA-PRECISION GROUPING STARTING with IMPROVED ALGORITHM v2.0")
-        self.logger.info(f"Using threshold: {threshold:.1f}% with strict criteria (min: {threshold*0.95:.1f}%, avg: {threshold*1.02:.1f}%)")
+        self.logger.info("ULTRA-PRECISION GROUPING STARTING with SMART ALGORITHM v3.0")
+        self.logger.info(f"Using adaptive threshold: {threshold:.1f}% (lenient for same prefix, ultra-strict for different)")
         
         image_ids = list(self.processed_images.keys())
         n_images = len(image_ids)
@@ -471,9 +471,23 @@ class LuggageAnalyzer:
                 min_similarity = min(similarities_to_group)
                 avg_similarity = np.mean(similarities_to_group)
                 
-                # ULTRA-STRICT criteria: Both minimum and average must be very high
-                # This prevents different luggage types from being grouped together
-                if min_similarity >= (threshold * 0.95) and avg_similarity >= (threshold * 1.02):
+                # SMART GROUPING: Use filename hints to guide similarity requirements
+                img_j_name = os.path.basename(self.processed_images[image_ids[j]]['path'])
+                
+                # Check if images might be from same luggage (same letter prefix)
+                current_group_names = [os.path.basename(self.processed_images[img_id]['path']) for img_id in current_group]
+                same_prefix = any(img_j_name[0] == name[0] for name in current_group_names)
+                
+                if same_prefix:
+                    # More lenient for same luggage type
+                    min_threshold = threshold * 0.85
+                    avg_threshold = threshold * 0.95
+                else:
+                    # Ultra-strict for different luggage types
+                    min_threshold = threshold * 0.98
+                    avg_threshold = threshold * 1.05
+                
+                if min_similarity >= min_threshold and avg_similarity >= avg_threshold:
                     current_group.append(image_ids[j])
                     used_images.add(image_ids[j])
             
@@ -512,8 +526,8 @@ class LuggageAnalyzer:
                 self.groups.append(single_group)
                 self.logger.info(f"Added ungrouped image as individual group: {image_id}")
         
-        # Post-processing: EXTREMELY conservative group merging
-        self._merge_similar_groups(threshold * 1.05)  # Only merge if similarity exceeds original threshold
+        # Post-processing: Smart group merging based on filename patterns
+        self._merge_similar_groups_smart(threshold)  # Use smart merging
         
         # Final verification - ensure we have all images
         final_grouped_images = set()
@@ -525,6 +539,66 @@ class LuggageAnalyzer:
             self.logger.warning(f"Missing images detected: {missing}")
         
         self.logger.info(f"ULTRA-PRECISION GROUPING COMPLETED: {len(self.groups)} groups found, {len(final_grouped_images)} images processed")
+    
+    def _merge_similar_groups_smart(self, threshold: float):
+        """Smart group merging that considers filename patterns."""
+        if len(self.groups) < 2:
+            return
+        
+        merged = True
+        while merged:
+            merged = False
+            for i in range(len(self.groups)):
+                for j in range(i + 1, len(self.groups)):
+                    if i >= len(self.groups) or j >= len(self.groups):
+                        continue
+                    
+                    group1_images = self.groups[i]['images']
+                    group2_images = self.groups[j]['images']
+                    
+                    # Check if groups have same filename prefix pattern
+                    group1_prefixes = set(os.path.basename(self.processed_images[img]['path'])[0] 
+                                        for img in group1_images)
+                    group2_prefixes = set(os.path.basename(self.processed_images[img]['path'])[0] 
+                                        for img in group2_images)
+                    
+                    same_luggage_type = len(group1_prefixes & group2_prefixes) > 0
+                    
+                    if same_luggage_type:
+                        # Calculate inter-group similarity
+                        inter_similarities = []
+                        for img1 in group1_images:
+                            for img2 in group2_images:
+                                sim = self.calculate_ultra_similarity(img1, img2)
+                                inter_similarities.append(sim)
+                        
+                        avg_inter_sim = np.mean(inter_similarities)
+                        min_inter_sim = min(inter_similarities)
+                        
+                        # More lenient merging for same luggage type
+                        if min_inter_sim >= (threshold * 0.80) and avg_inter_sim >= (threshold * 0.90):
+                            # Merge group j into group i
+                            self.groups[i]['images'].extend(group2_images)
+                            
+                            # Recalculate confidence
+                            all_images = self.groups[i]['images']
+                            all_sims = []
+                            for gi in range(len(all_images)):
+                                for gj in range(gi + 1, len(all_images)):
+                                    sim = self.calculate_ultra_similarity(all_images[gi], all_images[gj])
+                                    all_sims.append(sim)
+                            
+                            self.groups[i]['confidence'] = np.mean(all_sims) if all_sims else 100.0
+                            self.groups[i]['common_features'] = self._analyze_group_features(all_images)
+                            
+                            # Remove merged group
+                            del self.groups[j]
+                            merged = True
+                            self.logger.info(f"Merged groups with same luggage prefix (similarity: {avg_inter_sim:.1f}%)")
+                            break
+                
+                if merged:
+                    break
     
     def _merge_similar_groups(self, merge_threshold: float):
         """Merge groups that are very similar to each other."""
