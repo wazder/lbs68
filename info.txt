@@ -3,10 +3,10 @@ The photos include variations such as different angles, lighting conditions, and
 In some photos, the luggage is tilted, while in others it is upright. The system was designed with a primary focus on high accuracy,
 while performance was secondary, and the outputs were optimized for readability and correctness.
 
-In this project, SAM (Segment Anything Model) was used to isolate the luggage and remove background and irrelevant objects. SAM generated
-accurate masks of the luggage, ensuring that clothes or background noise did not affect the embeddings. The masked luggage images were then
-processed with the CLIP model, which produced semantic embeddings (vectors) representing the images. These embeddings were robust to angle and
-lighting variations and allowed for similarity measurement aligned with human perception.
+In this project, SAM (Segment Anything Model) was used to isolate the luggage and remove background and irrelevant objects. SAM 
+generated accurate masks of the luggage, ensuring that clothes or background noise did not affect the embeddings. The masked luggage 
+images were then processed with the CLIP model, which produced semantic embeddings (vectors) representing the images. These embeddings
+were robust to angle and lighting variations and allowed for similarity measurement aligned with human perception.
 
 After generating embeddings for all photos, the system calculated similarity scores using cosine similarity and reported the results as
 percentage similarity. This pipeline provided highly accurate comparisons by focusing solely on the masked luggage regions.

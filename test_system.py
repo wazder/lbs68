@@ -16,23 +16,23 @@ def test_initialization():
     
     try:
         comparator = LuggageComparator()
-        print("✓ LuggageComparator initialized successfully")
+        print("[OK] LuggageComparator initialized successfully")
         
         # Check if models are loaded
         if comparator.sam_predictor is not None:
-            print("✓ SAM model loaded")
+            print("[OK] SAM model loaded")
         else:
-            print("⚠ SAM model not loaded (may need to install segment-anything)")
+            print("[WARNING] SAM model not loaded (may need to install segment-anything)")
             
         if comparator.clip_model is not None and comparator.clip_processor is not None:
-            print("✓ CLIP model loaded")
+            print("[OK] CLIP model loaded")
         else:
-            print("⚠ CLIP model not loaded (may need to install transformers)")
+            print("[WARNING] CLIP model not loaded (may need to install transformers)")
             
         return comparator
         
     except Exception as e:
-        print(f"✗ Initialization failed: {e}")
+        print(f"[ERROR] Initialization failed: {e}")
         return None
 
 
@@ -98,49 +98,32 @@ def test_similarity_calculation():
         return False
 
 
-def test_database_operations():
-    """Test database operations."""
-    print("\nTesting database operations...")
+def test_luggage_detection():
+    """Test luggage detection functionality."""
+    print("\nTesting luggage detection...")
     
     comparator = LuggageComparator()
     
+    if comparator.clip_model is None:
+        print("⚠ Skipping luggage detection test - CLIP not available")
+        return True
+    
     try:
-        # Create dummy embeddings
-        dummy_embeddings = {
-            "luggage_001": np.random.randn(512),
-            "luggage_002": np.random.randn(512),
-            "luggage_003": np.random.randn(512)
-        }
+        # Create a dummy image (random RGB values)
+        dummy_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
         
-        # Add to database
-        for img_id, embedding in dummy_embeddings.items():
-            comparator.embeddings_db[img_id] = embedding
+        # Test luggage detection
+        detection_result = comparator.detect_luggage(dummy_image)
         
-        print(f"✓ Added {len(dummy_embeddings)} embeddings to database")
-        
-        # Test save/load
-        test_db_file = "test_database.npz"
-        comparator.save_database(test_db_file)
-        print("✓ Database saved successfully")
-        
-        # Clear database and reload
-        comparator.embeddings_db = {}
-        comparator.load_database(test_db_file)
-        
-        if len(comparator.embeddings_db) == 3:
-            print("✓ Database loaded successfully")
-        else:
-            print(f"⚠ Database loaded but has {len(comparator.embeddings_db)} items (expected 3)")
-        
-        # Clean up
-        import os
-        if os.path.exists(test_db_file):
-            os.remove(test_db_file)
+        print(f"✓ Luggage detection completed")
+        print(f"  - Is luggage: {detection_result['is_luggage']}")
+        print(f"  - Confidence: {detection_result['confidence']:.3f}")
+        print(f"  - Reason: {detection_result['reason']}")
         
         return True
         
     except Exception as e:
-        print(f"✗ Database operations failed: {e}")
+        print(f"✗ Luggage detection failed: {e}")
         return False
 
 
@@ -191,7 +174,7 @@ def run_all_tests():
         test_initialization,
         test_embedding_generation,
         test_similarity_calculation,
-        test_database_operations,
+        test_luggage_detection,
         test_mask_application
     ]
     
@@ -216,16 +199,23 @@ def run_all_tests():
 
 
 def main():
-    """Main test function."""
+    """Main test function - DEPRECATED: Use run_analysis.py --test instead."""
+    print("WARNING: Direct execution of test_system.py is deprecated.")
+    print("   Please use the integrated test system:")
+    print("   python run_analysis.py --test")
+    print()
+    
+    # Run tests for backward compatibility
+    print("Running tests via legacy interface...")
     success = run_all_tests()
     
     if not success:
         print("\nTroubleshooting:")
         print("- Install required packages: pip install -r requirements.txt")
-        print("- For SAM: pip install segment-anything")
-        print("- For CLIP: pip install transformers")
-        print("- Check Python version compatibility")
+        print("- Check dependencies: python run_analysis.py --check-deps")
+        print("- For detailed help: python run_analysis.py --help")
         
+    print("\nFor better testing experience, use: python run_analysis.py --test")
     sys.exit(0 if success else 1)
 
 

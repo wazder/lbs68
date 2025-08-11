@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Simple import test for the luggage analysis system
+Simple import test for the luggage analysis system - DEPRECATED
+Use 'python run_analysis.py --check-deps' instead
 """
 
 def test_imports():
     """Test basic imports without dependencies."""
-    print("Testing imports...")
+    print("Testing basic imports...")
+    print("NOTE: This script is deprecated. Use 'python run_analysis.py --check-deps' for comprehensive testing.")
     
     try:
         print("Testing basic Python modules...")
@@ -22,15 +24,15 @@ def test_imports():
         else:
             print("luggage_comparator.py missing")
             
-        if os.path.exists("multi_luggage_analyzer.py"):
-            print("multi_luggage_analyzer.py exists")
+        if os.path.exists("luggage_analyzer.py"):
+            print("luggage_analyzer.py exists")
         else:
-            print("multi_luggage_analyzer.py missing")
+            print("luggage_analyzer.py missing")
             
-        if os.path.exists("analyze_luggage.py"):
-            print("analyze_luggage.py exists")
+        if os.path.exists("run_analysis.py"):
+            print("run_analysis.py exists")
         else:
-            print("analyze_luggage.py missing")
+            print("run_analysis.py missing")
             
         print("Testing syntax by compiling files...")
         try:
@@ -42,26 +44,38 @@ def test_imports():
             print(f"luggage_comparator.py syntax error: {e}")
             
         try:
-            with open("multi_luggage_analyzer.py", "r") as f:
+            with open("luggage_analyzer.py", "r") as f:
                 code = f.read()
-            compile(code, "multi_luggage_analyzer.py", "exec")
-            print("multi_luggage_analyzer.py syntax is valid")
+            compile(code, "luggage_analyzer.py", "exec")
+            print("luggage_analyzer.py syntax is valid")
         except SyntaxError as e:
-            print(f"multi_luggage_analyzer.py syntax error: {e}")
+            print(f"luggage_analyzer.py syntax error: {e}")
             
         try:
-            with open("analyze_luggage.py", "r") as f:
+            with open("run_analysis.py", "r") as f:
                 code = f.read()
-            compile(code, "analyze_luggage.py", "exec")
-            print("analyze_luggage.py syntax is valid")
+            compile(code, "run_analysis.py", "exec")
+            print("run_analysis.py syntax is valid")
         except SyntaxError as e:
-            print(f"analyze_luggage.py syntax error: {e}")
+            print(f"run_analysis.py syntax error: {e}")
             
         print("\nAll files exist and have valid syntax!")
-        print("To run the full system, install dependencies:")
+        print("[OK] Basic import test completed successfully!")
+        print()
+        print("Next Steps:")
+        print("1. Install dependencies:")
         print("   pip install -r requirements.txt")
-        print("Then test with:")
-        print("   python analyze_luggage.py --interactive")
+        print()
+        print("2. Check system dependencies:")
+        print("   python run_analysis.py --check-deps")
+        print()
+        print("3. Run system tests:")
+        print("   python run_analysis.py --test")
+        print()
+        print("4. Start analysis:")
+        print("   python run_analysis.py")
+        print("   python run_analysis.py --interactive")
+        print("   python run_analysis.py --help")
         
     except Exception as e:
         print(f"Error: {e}")

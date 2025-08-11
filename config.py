@@ -29,7 +29,7 @@ class ModelConfig:
 @dataclass
 class ProcessingConfig:
     """Configuration for advanced precision processing settings."""
-    similarity_threshold: float = 35.0  # Extremely low threshold for ground truth matching
+    similarity_threshold: float = 92.0  # Higher threshold for stricter grouping
     luggage_detection_threshold: float = 0.8  # Higher precision
     batch_size: int = 1
     max_image_size: int = 2048

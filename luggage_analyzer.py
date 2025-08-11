@@ -785,49 +785,25 @@ class LuggageAnalyzer:
         return json_file, summary_file
 
 def main():
-    """Main analysis function."""
-    import argparse
+    """Main analysis function - DEPRECATED: Use run_analysis.py instead."""
+    print("WARNING: Direct execution of luggage_analyzer.py is deprecated.")
+    print("   Please use the main entry point instead:")
+    print("   python run_analysis.py")
+    print()
+    print("   For help and options:")
+    print("   python run_analysis.py --help")
+    print()
     
-    parser = argparse.ArgumentParser(description="Advanced Luggage Analysis System")
-    parser.add_argument("--folder", default="input", help="Input folder path")
-    parser.add_argument("--threshold", type=float, default=87.0, help="Similarity threshold (60-95)")
-    parser.add_argument("--output", default="output", help="Output directory")
-    parser.add_argument("--use-filename-hints", action="store_true", help="Use filename patterns for grouping (test mode)")
-    
-    args = parser.parse_args()
-    
-    print("ADVANCED LUGGAGE ANALYSIS SYSTEM")
-    mode_text = "Smart Pattern-Assisted Mode" if args.use_filename_hints else "Pure Visual Similarity Mode"
-    print(f"Mode: {mode_text}")
-    print(f"Input: {args.folder}")
-    print(f"Threshold: {args.threshold}%")
-    print("=" * 50)
-    
-    # Initialize analyzer
-    analyzer = LuggageAnalyzer(args.threshold, args.use_filename_hints)
-    
-    # Get images
-    image_files = [str(f) for f in get_image_files(args.folder)]
-    print(f"Processing {len(image_files)} images...")
-    
-    # Run complete analysis
-    results = analyzer.analyze_images(image_files, args.threshold)
-    
-    # Save results
-    json_file, summary_file = analyzer.save_ultra_results(args.output)
-    
-    print(f"\nRESULTS:")
-    print(f"   Total images: {results['total_photos']}")
-    print(f"   Groups found: {len(results['groups'])}")
-    
-    for i, group in enumerate(results['groups'], 1):
-        print(f"   Group {i}: {len(group['images'])} images (Confidence: {group['confidence']:.1f}%)")
-    
-    print(f"\nFiles saved:")
-    print(f"   - {json_file}")
-    print(f"   - {summary_file}")
-    
-    print("\nANALYSIS COMPLETED!")
+    import sys
+    try:
+        # Try to import and run the main system
+        from run_analysis import main as run_main
+        print("Redirecting to run_analysis.py...")
+        run_main()
+    except ImportError:
+        print("ERROR: Could not import run_analysis.py")
+        print("   Please run: python run_analysis.py")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

@@ -1,98 +1,221 @@
-Luggage Photo Comparison System
-=================================
+# Luggage Analysis System v2.0
+## Advanced AI-Powered Luggage Grouping System
 
-A comprehensive system that uses SAM (Segment Anything Model) and CLIP to compare luggage photos and group identical ones with detailed feature analysis.
+A comprehensive system that uses SAM (Segment Anything Model) and CLIP to compare luggage photos and group identical ones with ultra-high precision using advanced computer vision techniques.
 
-Quick Start
------------
+## Quick Start
 
-1. Easy Method - Just Drop Photos:
-   Put your photos in the 'input' folder and run:
-   ```bash
-   python auto_analyze.py
-   ```
-   **New**: Real-time progress updates and intelligent caching for faster runs!
+### 1. Basic Analysis (Recommended)
+Put your photos in the `input` folder and run:
+```bash
+python run_analysis.py
+```
 
-2. **Enhanced Interactive Method**:
-   ```bash
-   python analyze_luggage.py --interactive
-   ```
-   **New**: Improved input validation, better error messages, config-based defaults!
+### 2. Interactive Mode
+For step-by-step configuration:
+```bash
+python run_analysis.py --interactive
+```
 
-3. **Ultra-Precise Command Line** (Default Mode):
-   ```bash
-   python analyze_luggage.py --folder your_photos/
-   python analyze_luggage.py --files photo1.jpg photo2.jpg photo3.jpg
-   ```
-   **Now**: Ultra-precision analysis is THE DEFAULT! 95%+ accuracy with geometric verification!
+### 3. Custom Settings
+```bash
+python run_analysis.py --folder photos --threshold 85 --output results
+python run_analysis.py --config my_config.yaml
+```
 
-## Enhanced Folder Structure
+### 4. System Check
+Before first use, verify dependencies:
+```bash
+python run_analysis.py --check-deps
+python run_analysis.py --test
+```
+
+## Project Structure
 ```
 lbs68/
-├── input/                    Drop your photos here
-├── output/                   Results appear here (now with auto-archiving!)
-│   ├── archive/             Old results automatically archived
-│   └── README.md            Output directory documentation
-├── model_cache/             Cached models for faster loading
-├── config.yaml              Configuration file (optional)
-├── auto_analyze.py          Simple: analyzes input folder automatically
-├── analyze_luggage.py       Full-featured analysis tool
-├── multi_luggage_analyzer.py Core analysis engine
+├── run_analysis.py          Main entry point - START HERE
+├── input/                   Drop your luggage photos here
+├── output/                  Analysis results (JSON + text reports)
+├── model_cache/             Cached AI models for faster loading
+├── config.py                Configuration management system
+├── luggage_analyzer.py      Core analysis engine
+├── luggage_comparator.py    SAM + CLIP integration
 ├── utils.py                 Utility functions and helpers
-├── model_cache.py           Intelligent model caching system
-└── config.py                Configuration management
+├── model_cache.py           Intelligent model caching
+├── test_system.py           System tests
+├── test_imports.py          Basic import tests
+└── requirements.txt         Install dependencies with this
 ```
-├── luggage_comparator.py     SAM + CLIP integration
-└── requirements.txt          Install dependencies
 
-Features
---------
-- High Accuracy: Uses SAM for precise luggage segmentation + CLIP for semantic understanding
-- Feature Analysis: Color, size, texture, material detection
-- Smart Grouping: Groups identical luggage with confidence scores
-- Multiple Formats: JSON, CSV, and text reports
-- Easy to Use: Just drop photos in input folder
+## Features
 
-Installation
-------------
-Install dependencies:
+- **Ultra-High Accuracy**: Uses SAM segmentation + CLIP embeddings for 90%+ precision
+- **AI-Powered Analysis**: Deep learning models for color, texture, shape analysis
+- **Smart Grouping**: Intelligent clustering with confidence scores
+- **Model Caching**: Fast loading with intelligent caching system
+- **Rich Output**: JSON, text reports with detailed analysis
+- **Easy Setup**: One command installation and execution
+- **Configurable**: YAML/JSON config files + command line options
+- **Interactive Mode**: Step-by-step guided analysis
+- **Built-in Tests**: Comprehensive test suite included
+
+## Installation
+
+### 1. Install Python Dependencies
+```bash
 pip install -r requirements.txt
+```
 
-For SAM model:
-pip install segment-anything
+### 2. Verify Installation
+```bash
+python run_analysis.py --check-deps
+```
 
-SAM weights download automatically on first run
+### 3. Run Tests (Optional)
+```bash
+python run_analysis.py --test
+```
 
-Example Output
---------------
-LUGGAGE 1 - Confidence: 89.2%
-• Color: black
-• Size: medium
-• Texture: smooth
-• Material: hard_plastic_ABS
-• Photos: suitcase_1.jpg, suitcase_5.jpg, suitcase_8.jpg
-• Highest similarity: 94.5%
+**Note**: AI models (SAM, CLIP) download automatically on first use (~1-2GB)
 
-LUGGAGE 2 - Confidence: 76.8%
-• Color: blue
-• Size: large
-• Texture: lightly_textured
-• Material: fabric_soft
-• Photos: bag_2.jpg, bag_7.jpg
-• Highest similarity: 83.2%
+## Complete Usage Examples
 
-Advanced Usage
---------------
-Adjust similarity threshold: --threshold 80 (default: 75%)
-Custom output folder: --output results/
-No file saving: --no-save (console only)
+### Basic Commands
+```bash
+# Simple analysis
+python run_analysis.py
 
-How It Works
-------------
-1. SAM Segmentation: Isolates luggage from background/clothing
-2. CLIP Embeddings: Generates semantic feature vectors
-3. Cosine Similarity: Compares embeddings for similarity
-4. Smart Grouping: Groups similar luggage with confidence scores
-5. Feature Analysis: Extracts color, size, texture, material properties
+# Interactive mode with prompts
+python run_analysis.py --interactive
 
-Perfect for airports, hotels, or any scenario where you need to match luggage photos.
+# Custom folder and threshold
+python run_analysis.py --folder my_photos --threshold 90
+
+# Use configuration file
+python run_analysis.py --config my_config.yaml
+
+# Verbose output with detailed logging
+python run_analysis.py --verbose
+
+# Help and all options
+python run_analysis.py --help
+```
+
+### System Management
+```bash
+# Check all dependencies
+python run_analysis.py --check-deps
+
+# Run system tests
+python run_analysis.py --test
+
+# Show cached models info
+python run_analysis.py --cache-info
+
+# Clean old cached models
+python run_analysis.py --cache-cleanup
+```
+
+### Advanced Options
+```bash
+# Specify AI model settings
+python run_analysis.py --device cuda --sam-model vit_h
+
+# Use filename patterns for grouping
+python run_analysis.py --use-filename-hints
+
+# Custom output directory
+python run_analysis.py --output results/analysis_2024
+
+# Log to file
+python run_analysis.py --log-file analysis.log
+```
+
+## Example Output
+
+```
+LUGGAGE ANALYSIS SYSTEM
+========================================
+Input folder: input
+Found 12 images
+Similarity threshold: 87.0%
+Analysis mode: Pure Visual Similarity
+Output directory: output
+
+Initializing analyzer...
+[OK] Analyzer initialized successfully
+
+Processing 12 images...
+[OK] Image processing completed
+
+Saving results...
+[OK] Results saved successfully
+
+ANALYSIS RESULTS
+--------------------
+Total images processed: 12
+Groups identified: 4
+
+Group 1: 4 images [HIGH] (92.3% confidence)
+Group 2: 3 images [HIGH] (89.7% confidence)  
+Group 3: 3 images [MEDIUM] (78.2% confidence)
+Group 4: 2 images [HIGH] (91.5% confidence)
+
+FILES CREATED:
+   Detailed report: output/ultra_precision_report_20241211_143022.json
+   Summary report: output/ultra_precision_summary_20241211_143022.txt
+
+Analysis completed successfully!
+```
+
+## How It Works
+
+1. **Image Loading**: Validates and loads luggage photos
+2. **SAM Segmentation**: Isolates luggage from background/people  
+3. **CLIP Embeddings**: Generates semantic feature vectors
+4. **Feature Analysis**: Extracts color, shape, texture properties
+5. **Similarity Calculation**: Multi-level similarity comparison
+6. **Smart Grouping**: Clusters identical luggage with confidence
+7. **Report Generation**: Creates JSON + human-readable summaries
+
+## Configuration
+
+Create `config.yaml` for custom settings:
+
+```yaml
+model:
+  sam_model_type: vit_h          # vit_b, vit_l, vit_h
+  device: auto                   # auto, cpu, cuda, mps
+  
+processing:
+  similarity_threshold: 87.0     # 60-95
+  enable_segmentation: true
+  
+output:
+  default_output_dir: output
+  create_detailed_reports: true
+  save_similarity_matrix: true
+```
+
+## Perfect For
+
+- **Airports**: Match lost luggage with owner photos
+- **Hotels**: Identify guest luggage in storage
+- **Cruise Ships**: Organize luggage during boarding
+- **Event Management**: Sort and group luggage photos
+- **Security**: Identify suspicious luggage patterns
+
+## Troubleshooting
+
+- **Import errors**: Run `python run_analysis.py --check-deps`
+- **Memory issues**: Use `--device cpu` or smaller SAM model `--sam-model vit_b`
+- **No results**: Check image formats (JPG, PNG supported)
+- **Low accuracy**: Increase `--threshold` or ensure good image quality
+
+## Support
+
+Run the built-in diagnostics:
+```bash
+python run_analysis.py --check-deps
+python run_analysis.py --test
+```

@@ -762,13 +762,29 @@ class LuggageComparator:
 
 
 def main():
-    """Example usage of the LuggageComparator."""
-    # Initialize the comparator
-    comparator = LuggageComparator()
+    """Example usage of the LuggageComparator - DEPRECATED: Use run_analysis.py instead."""
+    print("WARNING: Direct execution of luggage_comparator.py is deprecated.")
+    print("   This is now a library module. Please use the main entry point:")
+    print("   python run_analysis.py")
+    print()
+    print("   For testing the comparator specifically:")
+    print("   python run_analysis.py --test")
+    print()
     
-    print("LuggageComparator initialized successfully!")
-    print("Use comparator.compare_images(img1, img2) to compare two images")
-    print("Use comparator.process_image(path) to get embeddings")
+    # Show basic functionality as demo
+    print("LuggageComparator Demo:")
+    try:
+        comparator = LuggageComparator()
+        print("[OK] LuggageComparator initialized successfully!")
+        print("   Available methods:")
+        print("   - comparator.compare_images(img1, img2)")
+        print("   - comparator.process_image(path)")
+        print("   - comparator.detect_luggage(image)")
+        print()
+        print("For full system functionality, use: python run_analysis.py")
+    except Exception as e:
+        print(f"[ERROR] Demo failed: {e}")
+        print("   Install dependencies: pip install -r requirements.txt")
 
 
 if __name__ == "__main__":
