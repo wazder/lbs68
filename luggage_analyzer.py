@@ -47,7 +47,7 @@ class LuggageAnalyzer:
         if threshold is not None:
             self.similarity_threshold = threshold
             
-        self.logger.info(f"🎯 LUGGAGE ANALYSIS STARTING: {len(image_paths)} images, threshold: {self.similarity_threshold}%")
+        self.logger.info(f"LUGGAGE ANALYSIS STARTING: {len(image_paths)} images, threshold: {self.similarity_threshold}%")
         
         # Process all images
         self.process_images(image_paths)
@@ -68,8 +68,8 @@ class LuggageAnalyzer:
         return self.group_with_ultra_precision(self.similarity_threshold, self.adaptive_threshold)
         
     def process_images(self, image_paths: List[str]):
-        """Ultra-precision image processing."""
-        self.logger.info("🚀 ULTRA-PRECISION PROCESSING BAŞLIYOR!")
+        """Advanced precision image processing."""
+        self.logger.info("ADVANCED PRECISION PROCESSING STARTING")
         
         for i, image_path in enumerate(image_paths):
             self.logger.info(f"Processing {i+1}/{len(image_paths)}: {os.path.basename(image_path)}")
@@ -89,7 +89,7 @@ class LuggageAnalyzer:
             }
     
     def _extract_ultra_features(self, image: np.ndarray, image_path: str) -> Dict[str, Any]:
-        """Ultra-precision feature extraction."""
+        """Advanced precision feature extraction."""
         features = {}
         
         # 1. CLIP Embedding
@@ -340,12 +340,12 @@ class LuggageAnalyzer:
         edge_sim = self._calculate_edge_similarity(img1_data['features']['edges'], img2_data['features']['edges'])
         similarities['edges'] = edge_sim
         
-        # Add SIFT/ORB feature matching for identical objects
-        sift_sim = self._calculate_keypoint_similarity(img1_data, img2_data)
-        similarities['keypoints'] = sift_sim
+        # SIFT keypoints disabled for speed - causing hang
+        # sift_sim = self._calculate_keypoint_similarity(img1_data, img2_data) 
+        # similarities['keypoints'] = sift_sim
         
-        # Optimized weighting for luggage matching
-        weights = {'keypoints': 0.25, 'clip': 0.30, 'color': 0.25, 'shape': 0.15, 'texture': 0.04, 'edges': 0.01}
+        # Fast weighting without SIFT keypoints
+        weights = {'clip': 0.40, 'color': 0.35, 'shape': 0.20, 'texture': 0.04, 'edges': 0.01}
         final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
         
         return final_similarity
@@ -409,61 +409,13 @@ class LuggageAnalyzer:
         return density_sim * 100
     
     def _calculate_keypoint_similarity(self, img1_data: Dict, img2_data: Dict) -> float:
-        """Calculate SIFT keypoint similarity for identical objects."""
-        try:
-            # Load images
-            img1 = cv2.imread(img1_data['path'])
-            img2 = cv2.imread(img2_data['path'])
-            
-            if img1 is None or img2 is None:
-                return 0
-            
-            # Convert to grayscale
-            gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-            gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-            
-            # Initialize SIFT detector
-            sift = cv2.SIFT_create(nfeatures=500)
-            
-            # Find keypoints and descriptors
-            kp1, des1 = sift.detectAndCompute(gray1, None)
-            kp2, des2 = sift.detectAndCompute(gray2, None)
-            
-            if des1 is None or des2 is None or len(des1) < 10 or len(des2) < 10:
-                return 0
-            
-            # FLANN matcher
-            FLANN_INDEX_KDTREE = 1
-            index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
-            search_params = dict(checks=50)
-            flann = cv2.FlannBasedMatcher(index_params, search_params)
-            
-            matches = flann.knnMatch(des1, des2, k=2)
-            
-            # Apply Lowe's ratio test
-            good_matches = []
-            for match_pair in matches:
-                if len(match_pair) == 2:
-                    m, n = match_pair
-                    if m.distance < 0.7 * n.distance:
-                        good_matches.append(m)
-            
-            # Calculate similarity based on good matches
-            if len(good_matches) > 10:
-                # Normalize by smaller keypoint count
-                max_matches = min(len(kp1), len(kp2))
-                similarity = min(len(good_matches) / max_matches * 100, 100)
-                return similarity
-            else:
-                return len(good_matches) * 2  # Small bonus for few matches
-                
-        except Exception as e:
-            self.logger.warning(f"SIFT matching failed: {e}")
-            return 0
+        """SIFT keypoint similarity - DISABLED for performance."""
+        # DISABLED: Too slow, causing system hang
+        return 0
     
     def group_with_ultra_precision(self, threshold: float = 87.0, adaptive=True):
         """Ultra-precision grouping."""
-        self.logger.info("🎯 ULTRA-PRECISION GROUPING BAŞLIYOR!")
+        self.logger.info("ULTRA-PRECISION GROUPING STARTING")
         
         image_ids = list(self.processed_images.keys())
         n_images = len(image_ids)
@@ -485,7 +437,7 @@ class LuggageAnalyzer:
             
             # Adjust threshold based on data distribution
             adaptive_threshold = min(threshold, mean_sim + 1.5 * std_sim)
-            self.logger.info(f"📊 Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
+            # self.logger.info(f"Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
             threshold = adaptive_threshold
         
         # Create groups using threshold-based approach instead of DBSCAN
@@ -538,7 +490,7 @@ class LuggageAnalyzer:
         # Post-processing: Merge very similar groups
         self._merge_similar_groups(threshold * 0.95)  # Slightly lower threshold for merging
         
-        self.logger.info(f"✅ ULTRA-PRECISION GROUPING TAMAMLANDI: {len(self.groups)} grup bulundu!")
+        self.logger.info(f"ULTRA-PRECISION GROUPING COMPLETED: {len(self.groups)} groups found")
     
     def _merge_similar_groups(self, merge_threshold: float):
         """Merge groups that are very similar to each other."""
@@ -584,7 +536,7 @@ class LuggageAnalyzer:
                         # Remove merged group
                         del self.groups[j]
                         merged = True
-                        self.logger.info(f"🔄 Merged similar groups (similarity: {avg_inter_sim:.1f}%)")
+                        # self.logger.info(f"Merged similar groups (similarity: {avg_inter_sim:.1f}%)")
                         break
                 
                 if merged:
@@ -724,10 +676,10 @@ def main():
     
     args = parser.parse_args()
     
-    print("🎯 ADVANCED LUGGAGE ANALYSIS SYSTEM 🎯")
-    print("🚀 Maximum Precision Mode")
-    print(f"📁 Input: {args.folder}")
-    print(f"🎯 Threshold: {args.threshold}%")
+    print("ADVANCED LUGGAGE ANALYSIS SYSTEM")
+    print("Maximum Precision Mode")
+    print(f"Input: {args.folder}")
+    print(f"Threshold: {args.threshold}%")
     print("=" * 50)
     
     # Initialize analyzer
@@ -735,7 +687,7 @@ def main():
     
     # Get images
     image_files = [str(f) for f in get_image_files(args.folder)]
-    print(f"📁 Processing {len(image_files)} images...")
+    print(f"Processing {len(image_files)} images...")
     
     # Run complete analysis
     results = analyzer.analyze_images(image_files, args.threshold)
@@ -743,18 +695,18 @@ def main():
     # Save results
     json_file, summary_file = analyzer.save_ultra_results(args.output)
     
-    print(f"\n📊 RESULTS:")
+    print(f"\nRESULTS:")
     print(f"   Total images: {results['total_photos']}")
     print(f"   Groups found: {len(results['groups'])}")
     
     for i, group in enumerate(results['groups'], 1):
         print(f"   Group {i}: {len(group['images'])} images (Confidence: {group['confidence']:.1f}%)")
     
-    print(f"\n📁 Files saved:")
+    print(f"\nFiles saved:")
     print(f"   - {json_file}")
     print(f"   - {summary_file}")
     
-    print("\n🎉 ANALYSIS COMPLETED!")
+    print("\nANALYSIS COMPLETED!")
 
 if __name__ == "__main__":
     main() 

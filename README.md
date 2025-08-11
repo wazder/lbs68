@@ -26,7 +26,7 @@ Quick Start
    ```
    **Now**: Ultra-precision analysis is THE DEFAULT! 95%+ accuracy with geometric verification!
 
-## 📁 Enhanced Folder Structure
+## Enhanced Folder Structure
 ```
 lbs68/
 ├── input/                    Drop your photos here
