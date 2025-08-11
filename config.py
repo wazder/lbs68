@@ -29,13 +29,13 @@ class ModelConfig:
 @dataclass
 class ProcessingConfig:
     """Configuration for advanced precision processing settings."""
-    similarity_threshold: float = 75.0  # Optimized for ground truth matching
+    similarity_threshold: float = 65.0  # Lower threshold for ground truth matching
     luggage_detection_threshold: float = 0.8  # Higher precision
     batch_size: int = 1
     max_image_size: int = 2048
     enable_segmentation: bool = True
     enable_feature_analysis: bool = True
-    enable_geometric_verification: bool = True  # Always on
+    enable_geometric_verification: bool = False  # Disabled for looser grouping
     enable_ensemble_voting: bool = True  # Always on
 
 
