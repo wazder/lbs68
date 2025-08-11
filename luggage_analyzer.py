@@ -491,9 +491,9 @@ class LuggageAnalyzer:
                         min_threshold = threshold * 0.98
                         avg_threshold = threshold * 1.05
                 else:
-                    # PURE VISUAL MODE: No filename hints, only image content
-                    min_threshold = threshold * 0.90  # 90% of threshold for weakest link
-                    avg_threshold = threshold * 0.95  # 95% of threshold for average
+                    # PURE VISUAL MODE: Much stricter to prevent grouping different luggage
+                    min_threshold = threshold * 0.98  # 98% of threshold for weakest link
+                    avg_threshold = threshold * 1.02  # 102% of threshold for average
                 
                 if min_similarity >= min_threshold and avg_similarity >= avg_threshold:
                     current_group.append(image_ids[j])
@@ -538,7 +538,7 @@ class LuggageAnalyzer:
         if self.use_filename_hints:
             self._merge_similar_groups_smart(threshold)  # Smart merging with filename patterns
         else:
-            self._merge_similar_groups(threshold * 0.95)  # Pure similarity-based merging
+            self._merge_similar_groups(threshold * 1.05)  # Very conservative pure similarity-based merging
         
         # Final verification - ensure we have all images
         final_grouped_images = set()
