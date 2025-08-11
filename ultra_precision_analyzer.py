@@ -313,8 +313,8 @@ class UltraPrecisionAnalyzer:
         edge_sim = self._calculate_edge_similarity(img1_data['features']['edges'], img2_data['features']['edges'])
         similarities['edges'] = edge_sim
         
-        # Weighted combination
-        weights = {'clip': 0.40, 'color': 0.25, 'shape': 0.20, 'texture': 0.10, 'edges': 0.05}
+        # Weighted combination - Color prioritized for luggage analysis
+        weights = {'color': 0.50, 'shape': 0.25, 'clip': 0.15, 'texture': 0.08, 'edges': 0.02}
         final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
         
         return final_similarity
@@ -335,12 +335,14 @@ class UltraPrecisionAnalyzer:
             cv2.HISTCMP_CORREL
         )
         
-        # Dominant color similarity
-        dom_color_sim = 1 - np.linalg.norm(
+        # Dominant color similarity (more strict)
+        color_diff = np.linalg.norm(
             np.array(color1['dominant_color']) - np.array(color2['dominant_color'])
-        ) / (255 * np.sqrt(3))
+        )
+        dom_color_sim = 1 - (color_diff / (255 * np.sqrt(3)))
         
-        return (rgb_sim + hsv_sim + dom_color_sim) / 3 * 100
+        # More weight to dominant color for luggage matching
+        return (rgb_sim * 0.2 + hsv_sim * 0.2 + dom_color_sim * 0.6) * 100
     
     def _calculate_shape_similarity(self, shape1: Dict, shape2: Dict) -> float:
         """Calculate shape similarity."""
@@ -375,7 +377,7 @@ class UltraPrecisionAnalyzer:
         
         return density_sim * 100
     
-    def group_with_ultra_precision(self, threshold: float = 85.0):
+    def group_with_ultra_precision(self, threshold: float = 90.0):
         """Ultra-precision grouping."""
         self.logger.info("🎯 ULTRA-PRECISION GROUPING BAŞLIYOR!")
         
@@ -397,7 +399,7 @@ class UltraPrecisionAnalyzer:
         # DBSCAN with strict parameters for high precision
         clustering = DBSCAN(
             eps=1-threshold/100,  # Much stricter: only group if similarity > threshold
-            min_samples=3,  # Require at least 3 similar images to form a group 
+            min_samples=2,  # Allow smaller groups to form more precise clusters
             metric='precomputed'
         )
         
@@ -445,23 +447,37 @@ class UltraPrecisionAnalyzer:
         return common_features
     
     def _get_common_color(self, colors: List[List[int]]) -> str:
-        """Get common color category."""
-        # Simple color categorization
+        """Get common color category with more precision."""
+        # More precise color categorization
         avg_color = np.mean(colors, axis=0)
         r, g, b = avg_color
         
-        if r > 200 and g > 200 and b > 200:
-            return 'white'
-        elif r < 50 and g < 50 and b < 50:
+        # Convert to HSV for better color classification
+        rgb_normalized = avg_color / 255.0
+        hsv = cv2.cvtColor(np.uint8([[rgb_normalized * 255]]), cv2.COLOR_RGB2HSV)[0][0]
+        h, s, v = hsv
+        
+        # More detailed color classification
+        if v < 30:  # Very dark
             return 'black'
-        elif r > g and r > b:
+        elif v > 220 and s < 30:  # Very light
+            return 'white'
+        elif s < 30:  # Low saturation - grays
+            return 'gray'
+        elif h < 15 or h > 165:  # Red range
             return 'red'
-        elif g > r and g > b:
+        elif 15 <= h < 45:  # Orange/Yellow range
+            return 'orange_yellow'
+        elif 45 <= h < 75:  # Green range
             return 'green'
-        elif b > r and b > g:
+        elif 75 <= h < 105:  # Cyan range
+            return 'cyan'
+        elif 105 <= h < 135:  # Blue range
             return 'blue'
+        elif 135 <= h <= 165:  # Purple/Magenta range
+            return 'purple'
         else:
-            return 'other'
+            return 'mixed'
     
     def _get_common_size(self, areas: List[float]) -> str:
         """Get common size category."""
@@ -541,7 +557,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Ultra-Precision Luggage Analysis")
     parser.add_argument("--folder", default="input", help="Input folder path")
-    parser.add_argument("--threshold", type=float, default=85.0, help="Similarity threshold (60-95)")
+    parser.add_argument("--threshold", type=float, default=90.0, help="Similarity threshold (60-95)")
     parser.add_argument("--output", default="output", help="Output directory")
     
     args = parser.parse_args()
