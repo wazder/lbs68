@@ -56,8 +56,6 @@ Examples:
     # Analysis options
     parser.add_argument("--threshold", "-t", type=float, default=None,
                        help="Similarity threshold (0-100, default: from config)")
-    parser.add_argument("--use-filename-hints", action="store_true",
-                       help="Use filename patterns for smarter grouping")
     
     # Configuration
     parser.add_argument("--config", "-c", type=str,
@@ -200,9 +198,9 @@ def interactive_mode():
     # Get similarity threshold
     while True:
         try:
-            threshold_str = input("Enter similarity threshold (60-95) [87]: ").strip()
+            threshold_str = input("Enter similarity threshold (60-95) [75]: ").strip()
             if not threshold_str:
-                threshold = 87.0
+                threshold = 75.0
                 break
             threshold = float(threshold_str)
             if 60 <= threshold <= 95:
@@ -212,9 +210,6 @@ def interactive_mode():
         except ValueError:
             print("[ERROR] Please enter a valid number")
     
-    # Ask about filename hints
-    use_hints = input("Use filename patterns for grouping? (y/n) [n]: ").strip().lower()
-    use_filename_hints = use_hints in ['y', 'yes', '1', 'true']
     
     # Get output directory
     output_dir = input("Enter output directory [output]: ").strip()
@@ -226,7 +221,6 @@ def interactive_mode():
     print(f"   Input folder: {folder}")
     print(f"   Images found: {len(image_files)}")
     print(f"   Similarity threshold: {threshold}%")
-    print(f"   Use filename hints: {'Yes' if use_filename_hints else 'No'}")
     print(f"   Output directory: {output_dir}")
     
     confirm = input("\nProceed with analysis? (y/n) [y]: ").strip().lower()
@@ -235,13 +229,12 @@ def interactive_mode():
         return
     
     # Run analysis
-    return run_analysis(folder, output_dir, threshold, use_filename_hints)
+    return run_analysis(folder, output_dir, threshold)
 
 def run_analysis(
     input_folder: str,
     output_dir: str, 
     threshold: Optional[float] = None,
-    use_filename_hints: bool = False,
     verbose: bool = False
 ) -> bool:
     """Run the main luggage analysis."""
@@ -274,8 +267,7 @@ def run_analysis(
     print(f"Input folder: {input_folder}")
     print(f"Found {len(image_files)} images")
     print(f"Similarity threshold: {threshold}%")
-    mode_text = "Smart Pattern-Assisted" if use_filename_hints else "Pure Visual Similarity"
-    print(f"Analysis mode: {mode_text}")
+    print(f"Analysis mode: Pure Visual Similarity")
     print(f"Output directory: {output_dir}")
     print()
     
@@ -283,8 +275,7 @@ def run_analysis(
         # Initialize analyzer
         print("Initializing analyzer...")
         analyzer = LuggageAnalyzer(
-            similarity_threshold=threshold,
-            use_filename_hints=use_filename_hints
+            similarity_threshold=threshold
         )
         print("[OK] Analyzer initialized successfully")
         
@@ -385,7 +376,6 @@ def main():
                 input_folder=args.folder,
                 output_dir=args.output,
                 threshold=args.threshold,
-                use_filename_hints=args.use_filename_hints,
                 verbose=args.verbose
             )
             sys.exit(0 if success else 1)

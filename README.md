@@ -19,7 +19,7 @@ python run_analysis.py --interactive
 
 ### 3. Custom Settings
 ```bash
-python run_analysis.py --folder photos --threshold 85 --output results
+python run_analysis.py --folder photos --threshold 75 --output results
 python run_analysis.py --config my_config.yaml
 ```
 
@@ -89,7 +89,7 @@ python run_analysis.py
 python run_analysis.py --interactive
 
 # Custom folder and threshold
-python run_analysis.py --folder my_photos --threshold 90
+python run_analysis.py --folder my_photos --threshold 75
 
 # Use configuration file
 python run_analysis.py --config my_config.yaml
@@ -188,7 +188,7 @@ model:
   device: auto                   # auto, cpu, cuda, mps
   
 processing:
-  similarity_threshold: 87.0     # 60-95
+  similarity_threshold: 75.0     # 60-95
   enable_segmentation: true
   
 output:
