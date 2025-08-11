@@ -377,7 +377,7 @@ class UltraPrecisionAnalyzer:
         
         return density_sim * 100
     
-    def group_with_ultra_precision(self, threshold: float = 85.0):
+    def group_with_ultra_precision(self, threshold: float = 87.0):
         """Ultra-precision grouping."""
         self.logger.info("🎯 ULTRA-PRECISION GROUPING BAŞLIYOR!")
         
@@ -571,7 +571,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Ultra-Precision Luggage Analysis")
     parser.add_argument("--folder", default="input", help="Input folder path")
-    parser.add_argument("--threshold", type=float, default=85.0, help="Similarity threshold (60-95)")
+    parser.add_argument("--threshold", type=float, default=87.0, help="Similarity threshold (60-95)")
     parser.add_argument("--output", default="output", help="Output directory")
     
     args = parser.parse_args()
