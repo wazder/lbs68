@@ -344,8 +344,9 @@ class LuggageAnalyzer:
         # sift_sim = self._calculate_keypoint_similarity(img1_data, img2_data) 
         # similarities['keypoints'] = sift_sim
         
-        # Fast weighting without SIFT keypoints
-        weights = {'clip': 0.40, 'color': 0.35, 'shape': 0.20, 'texture': 0.04, 'edges': 0.01}
+        # Optimized weighting for identical luggage detection
+        # CLIP embeddings are most reliable for identical items
+        weights = {'clip': 0.60, 'color': 0.25, 'shape': 0.10, 'texture': 0.04, 'edges': 0.01}
         final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
         
         return final_similarity
@@ -440,7 +441,7 @@ class LuggageAnalyzer:
             # self.logger.info(f"Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
             threshold = adaptive_threshold
         
-        # Create groups using threshold-based approach instead of DBSCAN
+        # Create groups using strict threshold-based approach 
         self.groups = []
         used_images = set()
         
@@ -452,45 +453,76 @@ class LuggageAnalyzer:
             current_group = [image_ids[i]]
             used_images.add(image_ids[i])
             
-            # Find all images similar enough to this one
+            # Find all images similar enough to this one using STRICTER criteria
             for j in range(i+1, n_images):
                 if image_ids[j] in used_images:
                     continue
                 
-                # Check if similar to ANY image in current group
-                max_similarity = 0
+                # STRICTER APPROACH: Must be similar to ALL images in current group
+                # This prevents cross-contamination between different luggage types
+                similarities_to_group = []
                 for group_img_id in current_group:
                     group_idx = image_ids.index(group_img_id)
                     similarity = similarity_matrix[group_idx, j]
-                    max_similarity = max(max_similarity, similarity)
+                    similarities_to_group.append(similarity)
                 
-                # If similar enough, add to group
-                if max_similarity >= threshold:
+                # Must meet minimum similarity to ALL group members
+                min_similarity = min(similarities_to_group)
+                avg_similarity = np.mean(similarities_to_group)
+                
+                # Stricter criteria: minimum similarity must be high AND average must be very high
+                if min_similarity >= (threshold * 0.85) and avg_similarity >= threshold:
                     current_group.append(image_ids[j])
                     used_images.add(image_ids[j])
             
-            # Only create group if more than 1 image
-            if len(current_group) >= 2:
-                group_similarities = []
+            # Create group even with single images (they might be unique luggage)
+            group_similarities = []
+            if len(current_group) > 1:
                 for g_i, img1 in enumerate(current_group):
                     for g_j, img2 in enumerate(current_group):
                         if g_i < g_j:
                             idx1 = image_ids.index(img1)
                             idx2 = image_ids.index(img2)
                             group_similarities.append(similarity_matrix[idx1, idx2])
-                
-                group = {
-                    'images': current_group,
-                    'confidence': np.mean(group_similarities) if group_similarities else 0,
+            
+            group = {
+                'images': current_group,
+                'confidence': np.mean(group_similarities) if group_similarities else 100.0,
+                'similarities': {},
+                'common_features': self._analyze_group_features(current_group)
+            }
+            self.groups.append(group)
+        
+        # Ensure ALL images are included - create single-image groups for remaining images
+        all_grouped_images = set()
+        for group in self.groups:
+            all_grouped_images.update(group['images'])
+        
+        # Add ungrouped images as individual groups
+        for image_id in image_ids:
+            if image_id not in all_grouped_images:
+                single_group = {
+                    'images': [image_id],
+                    'confidence': 100.0,  # Perfect confidence for unique items
                     'similarities': {},
-                    'common_features': self._analyze_group_features(current_group)
+                    'common_features': self._analyze_group_features([image_id])
                 }
-                self.groups.append(group)
+                self.groups.append(single_group)
+                self.logger.info(f"Added ungrouped image as individual group: {image_id}")
         
-        # Post-processing: Merge very similar groups
-        self._merge_similar_groups(threshold * 0.95)  # Slightly lower threshold for merging
+        # Post-processing: Conservative group merging only for very high similarity
+        self._merge_similar_groups(threshold * 0.98)  # Much higher threshold to prevent incorrect merging
         
-        self.logger.info(f"ULTRA-PRECISION GROUPING COMPLETED: {len(self.groups)} groups found")
+        # Final verification - ensure we have all images
+        final_grouped_images = set()
+        for group in self.groups:
+            final_grouped_images.update(group['images'])
+        
+        if len(final_grouped_images) != len(image_ids):
+            missing = set(image_ids) - final_grouped_images
+            self.logger.warning(f"Missing images detected: {missing}")
+        
+        self.logger.info(f"ULTRA-PRECISION GROUPING COMPLETED: {len(self.groups)} groups found, {len(final_grouped_images)} images processed")
     
     def _merge_similar_groups(self, merge_threshold: float):
         """Merge groups that are very similar to each other."""
