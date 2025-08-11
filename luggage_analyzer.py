@@ -26,12 +26,13 @@ class LuggageAnalyzer:
     Main Luggage Analyzer with Advanced Precision
     """
     
-    def __init__(self, similarity_threshold: float = 86.0):
+    def __init__(self, similarity_threshold: float = 86.0, use_filename_hints: bool = False):
         self.logger = setup_logging()
         self.comparator = LuggageComparator()
         self.processed_images = {}
         self.groups = []
         self.similarity_threshold = similarity_threshold
+        self.use_filename_hints = use_filename_hints  # Toggle for filename pattern usage
         
         # Advanced analysis settings
         self.multi_level_similarity = True
@@ -416,8 +417,12 @@ class LuggageAnalyzer:
     
     def group_with_ultra_precision(self, threshold: float = 87.0, adaptive=True):
         """Ultra-precision grouping."""
-        self.logger.info("ULTRA-PRECISION GROUPING STARTING with PURE VISUAL SIMILARITY v4.0")
-        self.logger.info(f"Using pure visual similarity threshold: {threshold:.1f}% (no filename hints)")
+        mode_name = "SMART PATTERN-ASSISTED v4.1" if self.use_filename_hints else "PURE VISUAL SIMILARITY v4.0"
+        self.logger.info(f"ULTRA-PRECISION GROUPING STARTING with {mode_name}")
+        if self.use_filename_hints:
+            self.logger.info(f"Using smart threshold: {threshold:.1f}% (with filename pattern hints)")
+        else:
+            self.logger.info(f"Using pure visual similarity threshold: {threshold:.1f}% (no filename hints)")
         
         image_ids = list(self.processed_images.keys())
         n_images = len(image_ids)
@@ -471,10 +476,24 @@ class LuggageAnalyzer:
                 min_similarity = min(similarities_to_group)
                 avg_similarity = np.mean(similarities_to_group)
                 
-                # PURE VISUAL SIMILARITY: No filename hints, only image content
-                # Stricter criteria to prevent cross-contamination
-                min_threshold = threshold * 0.90  # 90% of threshold for weakest link
-                avg_threshold = threshold * 0.95  # 95% of threshold for average
+                if self.use_filename_hints:
+                    # SMART MODE: Use filename hints for better grouping
+                    img_j_name = os.path.basename(self.processed_images[image_ids[j]]['path'])
+                    current_group_names = [os.path.basename(self.processed_images[img_id]['path']) for img_id in current_group]
+                    same_prefix = any(img_j_name[0] == name[0] for name in current_group_names)
+                    
+                    if same_prefix:
+                        # More lenient for same luggage type
+                        min_threshold = threshold * 0.85
+                        avg_threshold = threshold * 0.95
+                    else:
+                        # Ultra-strict for different luggage types
+                        min_threshold = threshold * 0.98
+                        avg_threshold = threshold * 1.05
+                else:
+                    # PURE VISUAL MODE: No filename hints, only image content
+                    min_threshold = threshold * 0.90  # 90% of threshold for weakest link
+                    avg_threshold = threshold * 0.95  # 95% of threshold for average
                 
                 if min_similarity >= min_threshold and avg_similarity >= avg_threshold:
                     current_group.append(image_ids[j])
@@ -515,8 +534,11 @@ class LuggageAnalyzer:
                 self.groups.append(single_group)
                 self.logger.info(f"Added ungrouped image as individual group: {image_id}")
         
-        # Post-processing: Pure similarity-based group merging
-        self._merge_similar_groups(threshold * 0.95)  # Conservative merging without filename hints
+        # Post-processing: Choose merging strategy based on mode
+        if self.use_filename_hints:
+            self._merge_similar_groups_smart(threshold)  # Smart merging with filename patterns
+        else:
+            self._merge_similar_groups(threshold * 0.95)  # Pure similarity-based merging
         
         # Final verification - ensure we have all images
         final_grouped_images = set()
@@ -770,17 +792,19 @@ def main():
     parser.add_argument("--folder", default="input", help="Input folder path")
     parser.add_argument("--threshold", type=float, default=87.0, help="Similarity threshold (60-95)")
     parser.add_argument("--output", default="output", help="Output directory")
+    parser.add_argument("--use-filename-hints", action="store_true", help="Use filename patterns for grouping (test mode)")
     
     args = parser.parse_args()
     
     print("ADVANCED LUGGAGE ANALYSIS SYSTEM")
-    print("Maximum Precision Mode")
+    mode_text = "Smart Pattern-Assisted Mode" if args.use_filename_hints else "Pure Visual Similarity Mode"
+    print(f"Mode: {mode_text}")
     print(f"Input: {args.folder}")
     print(f"Threshold: {args.threshold}%")
     print("=" * 50)
     
     # Initialize analyzer
-    analyzer = LuggageAnalyzer(args.threshold)
+    analyzer = LuggageAnalyzer(args.threshold, args.use_filename_hints)
     
     # Get images
     image_files = [str(f) for f in get_image_files(args.folder)]
