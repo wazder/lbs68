@@ -344,9 +344,9 @@ class LuggageAnalyzer:
         # sift_sim = self._calculate_keypoint_similarity(img1_data, img2_data) 
         # similarities['keypoints'] = sift_sim
         
-        # Optimized weighting for identical luggage detection
-        # CLIP embeddings are most reliable for identical items
-        weights = {'clip': 0.60, 'color': 0.25, 'shape': 0.10, 'texture': 0.04, 'edges': 0.01}
+        # Pure visual similarity weighting - heavy emphasis on CLIP
+        # CLIP embeddings are most reliable for identical luggage detection
+        weights = {'clip': 0.70, 'color': 0.20, 'shape': 0.08, 'texture': 0.015, 'edges': 0.005}
         final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
         
         return final_similarity
@@ -416,8 +416,8 @@ class LuggageAnalyzer:
     
     def group_with_ultra_precision(self, threshold: float = 87.0, adaptive=True):
         """Ultra-precision grouping."""
-        self.logger.info("ULTRA-PRECISION GROUPING STARTING with SMART ALGORITHM v3.0")
-        self.logger.info(f"Using adaptive threshold: {threshold:.1f}% (lenient for same prefix, ultra-strict for different)")
+        self.logger.info("ULTRA-PRECISION GROUPING STARTING with PURE VISUAL SIMILARITY v4.0")
+        self.logger.info(f"Using pure visual similarity threshold: {threshold:.1f}% (no filename hints)")
         
         image_ids = list(self.processed_images.keys())
         n_images = len(image_ids)
@@ -471,21 +471,10 @@ class LuggageAnalyzer:
                 min_similarity = min(similarities_to_group)
                 avg_similarity = np.mean(similarities_to_group)
                 
-                # SMART GROUPING: Use filename hints to guide similarity requirements
-                img_j_name = os.path.basename(self.processed_images[image_ids[j]]['path'])
-                
-                # Check if images might be from same luggage (same letter prefix)
-                current_group_names = [os.path.basename(self.processed_images[img_id]['path']) for img_id in current_group]
-                same_prefix = any(img_j_name[0] == name[0] for name in current_group_names)
-                
-                if same_prefix:
-                    # More lenient for same luggage type
-                    min_threshold = threshold * 0.85
-                    avg_threshold = threshold * 0.95
-                else:
-                    # Ultra-strict for different luggage types
-                    min_threshold = threshold * 0.98
-                    avg_threshold = threshold * 1.05
+                # PURE VISUAL SIMILARITY: No filename hints, only image content
+                # Stricter criteria to prevent cross-contamination
+                min_threshold = threshold * 0.90  # 90% of threshold for weakest link
+                avg_threshold = threshold * 0.95  # 95% of threshold for average
                 
                 if min_similarity >= min_threshold and avg_similarity >= avg_threshold:
                     current_group.append(image_ids[j])
@@ -526,8 +515,8 @@ class LuggageAnalyzer:
                 self.groups.append(single_group)
                 self.logger.info(f"Added ungrouped image as individual group: {image_id}")
         
-        # Post-processing: Smart group merging based on filename patterns
-        self._merge_similar_groups_smart(threshold)  # Use smart merging
+        # Post-processing: Pure similarity-based group merging
+        self._merge_similar_groups(threshold * 0.95)  # Conservative merging without filename hints
         
         # Final verification - ensure we have all images
         final_grouped_images = set()
