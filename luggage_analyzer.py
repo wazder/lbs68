@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ULTRA-PRECISION LUGGAGE ANALYZER
-%100 Doğruluk için gelişmiş algoritma
+MAIN LUGGAGE ANALYZER
+Advanced luggage grouping with maximum precision
 """
 
 import os
@@ -21,24 +21,51 @@ import matplotlib.pyplot as plt
 from luggage_comparator import LuggageComparator
 from utils import get_image_files, setup_logging
 
-class UltraPrecisionAnalyzer:
+class LuggageAnalyzer:
     """
-    %100 Doğruluk için Ultra-Precision Luggage Analyzer
+    Main Luggage Analyzer with Advanced Precision
     """
     
-    def __init__(self):
+    def __init__(self, similarity_threshold: float = 87.0):
         self.logger = setup_logging()
         self.comparator = LuggageComparator()
         self.processed_images = {}
         self.groups = []
+        self.similarity_threshold = similarity_threshold
         
-        # Ultra-precision settings
+        # Advanced analysis settings
         self.multi_level_similarity = True
-        self.geometric_verification = True
+        self.geometric_verification = True  
         self.color_analysis = True
         self.shape_analysis = True
         self.texture_analysis = True
-        self.ensemble_voting = True
+        self.keypoint_matching = True
+        self.adaptive_threshold = True
+    
+    def analyze_images(self, image_paths: List[str], threshold: float = None) -> Dict[str, Any]:
+        """Main analysis method - process and group images."""
+        if threshold is not None:
+            self.similarity_threshold = threshold
+            
+        self.logger.info(f"🎯 LUGGAGE ANALYSIS STARTING: {len(image_paths)} images, threshold: {self.similarity_threshold}%")
+        
+        # Process all images
+        self.process_images(image_paths)
+        
+        # Group similar images
+        self.group_with_ultra_precision(self.similarity_threshold, self.adaptive_threshold)
+        
+        # Return results
+        return {
+            'groups': self.groups,
+            'total_photos': len(self.processed_images),
+            'processed_images': {k: {'path': v['path']} for k, v in self.processed_images.items()},
+            'analysis_date': datetime.now().isoformat()
+        }
+        
+    def group_similar_luggage(self):
+        """Compatibility method for old interface."""
+        return self.group_with_ultra_precision(self.similarity_threshold, self.adaptive_threshold)
         
     def process_images(self, image_paths: List[str]):
         """Ultra-precision image processing."""
@@ -313,8 +340,12 @@ class UltraPrecisionAnalyzer:
         edge_sim = self._calculate_edge_similarity(img1_data['features']['edges'], img2_data['features']['edges'])
         similarities['edges'] = edge_sim
         
-        # Balanced weighting for better luggage separation
-        weights = {'clip': 0.35, 'color': 0.30, 'shape': 0.25, 'texture': 0.08, 'edges': 0.02}
+        # Add SIFT/ORB feature matching for identical objects
+        sift_sim = self._calculate_keypoint_similarity(img1_data, img2_data)
+        similarities['keypoints'] = sift_sim
+        
+        # Optimized weighting for luggage matching
+        weights = {'keypoints': 0.25, 'clip': 0.30, 'color': 0.25, 'shape': 0.15, 'texture': 0.04, 'edges': 0.01}
         final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
         
         return final_similarity
@@ -377,7 +408,60 @@ class UltraPrecisionAnalyzer:
         
         return density_sim * 100
     
-    def group_with_ultra_precision(self, threshold: float = 87.0):
+    def _calculate_keypoint_similarity(self, img1_data: Dict, img2_data: Dict) -> float:
+        """Calculate SIFT keypoint similarity for identical objects."""
+        try:
+            # Load images
+            img1 = cv2.imread(img1_data['path'])
+            img2 = cv2.imread(img2_data['path'])
+            
+            if img1 is None or img2 is None:
+                return 0
+            
+            # Convert to grayscale
+            gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+            gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+            
+            # Initialize SIFT detector
+            sift = cv2.SIFT_create(nfeatures=500)
+            
+            # Find keypoints and descriptors
+            kp1, des1 = sift.detectAndCompute(gray1, None)
+            kp2, des2 = sift.detectAndCompute(gray2, None)
+            
+            if des1 is None or des2 is None or len(des1) < 10 or len(des2) < 10:
+                return 0
+            
+            # FLANN matcher
+            FLANN_INDEX_KDTREE = 1
+            index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
+            search_params = dict(checks=50)
+            flann = cv2.FlannBasedMatcher(index_params, search_params)
+            
+            matches = flann.knnMatch(des1, des2, k=2)
+            
+            # Apply Lowe's ratio test
+            good_matches = []
+            for match_pair in matches:
+                if len(match_pair) == 2:
+                    m, n = match_pair
+                    if m.distance < 0.7 * n.distance:
+                        good_matches.append(m)
+            
+            # Calculate similarity based on good matches
+            if len(good_matches) > 10:
+                # Normalize by smaller keypoint count
+                max_matches = min(len(kp1), len(kp2))
+                similarity = min(len(good_matches) / max_matches * 100, 100)
+                return similarity
+            else:
+                return len(good_matches) * 2  # Small bonus for few matches
+                
+        except Exception as e:
+            self.logger.warning(f"SIFT matching failed: {e}")
+            return 0
+    
+    def group_with_ultra_precision(self, threshold: float = 87.0, adaptive=True):
         """Ultra-precision grouping."""
         self.logger.info("🎯 ULTRA-PRECISION GROUPING BAŞLIYOR!")
         
@@ -392,6 +476,17 @@ class UltraPrecisionAnalyzer:
                 similarity = self.calculate_ultra_similarity(image_ids[i], image_ids[j])
                 similarity_matrix[i, j] = similarity
                 similarity_matrix[j, i] = similarity
+        
+        # Adaptive threshold based on similarity distribution
+        if adaptive:
+            similarities_flat = similarity_matrix[similarity_matrix > 0].flatten()
+            mean_sim = np.mean(similarities_flat)
+            std_sim = np.std(similarities_flat)
+            
+            # Adjust threshold based on data distribution
+            adaptive_threshold = min(threshold, mean_sim + 1.5 * std_sim)
+            self.logger.info(f"📊 Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
+            threshold = adaptive_threshold
         
         # Create groups using threshold-based approach instead of DBSCAN
         self.groups = []
@@ -440,7 +535,60 @@ class UltraPrecisionAnalyzer:
                 }
                 self.groups.append(group)
         
+        # Post-processing: Merge very similar groups
+        self._merge_similar_groups(threshold * 0.95)  # Slightly lower threshold for merging
+        
         self.logger.info(f"✅ ULTRA-PRECISION GROUPING TAMAMLANDI: {len(self.groups)} grup bulundu!")
+    
+    def _merge_similar_groups(self, merge_threshold: float):
+        """Merge groups that are very similar to each other."""
+        if len(self.groups) < 2:
+            return
+        
+        merged = True
+        while merged:
+            merged = False
+            for i in range(len(self.groups)):
+                for j in range(i + 1, len(self.groups)):
+                    if i >= len(self.groups) or j >= len(self.groups):
+                        continue
+                    
+                    # Calculate inter-group similarity
+                    group1_images = self.groups[i]['images']
+                    group2_images = self.groups[j]['images']
+                    
+                    inter_similarities = []
+                    for img1 in group1_images:
+                        for img2 in group2_images:
+                            sim = self.calculate_ultra_similarity(img1, img2)
+                            inter_similarities.append(sim)
+                    
+                    avg_inter_sim = np.mean(inter_similarities)
+                    
+                    # If groups are very similar, merge them
+                    if avg_inter_sim >= merge_threshold:
+                        # Merge group j into group i
+                        self.groups[i]['images'].extend(group2_images)
+                        
+                        # Recalculate confidence
+                        all_images = self.groups[i]['images']
+                        all_sims = []
+                        for gi in range(len(all_images)):
+                            for gj in range(gi + 1, len(all_images)):
+                                sim = self.calculate_ultra_similarity(all_images[gi], all_images[gj])
+                                all_sims.append(sim)
+                        
+                        self.groups[i]['confidence'] = np.mean(all_sims) if all_sims else 0
+                        self.groups[i]['common_features'] = self._analyze_group_features(all_images)
+                        
+                        # Remove merged group
+                        del self.groups[j]
+                        merged = True
+                        self.logger.info(f"🔄 Merged similar groups (similarity: {avg_inter_sim:.1f}%)")
+                        break
+                
+                if merged:
+                    break
     
     def _analyze_group_features(self, image_ids: List[str]) -> Dict[str, Any]:
         """Analyze common features of a group."""
@@ -566,51 +714,47 @@ class UltraPrecisionAnalyzer:
         return json_file, summary_file
 
 def main():
-    """Ultra-precision analysis main function."""
+    """Main analysis function."""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Ultra-Precision Luggage Analysis")
+    parser = argparse.ArgumentParser(description="Advanced Luggage Analysis System")
     parser.add_argument("--folder", default="input", help="Input folder path")
     parser.add_argument("--threshold", type=float, default=87.0, help="Similarity threshold (60-95)")
     parser.add_argument("--output", default="output", help="Output directory")
     
     args = parser.parse_args()
     
-    print("🔥 ULTRA-PRECISION LUGGAGE ANALYSIS 🔥")
-    print("🎯 HEDEF: %100 DOĞRULUK!")
+    print("🎯 ADVANCED LUGGAGE ANALYSIS SYSTEM 🎯")
+    print("🚀 Maximum Precision Mode")
     print(f"📁 Input: {args.folder}")
     print(f"🎯 Threshold: {args.threshold}%")
     print("=" * 50)
     
     # Initialize analyzer
-    analyzer = UltraPrecisionAnalyzer()
+    analyzer = LuggageAnalyzer(args.threshold)
     
     # Get images
     image_files = [str(f) for f in get_image_files(args.folder)]
-    print(f"📁 {len(image_files)} resim işleniyor...")
+    print(f"📁 Processing {len(image_files)} images...")
     
-    # Process images
-    analyzer.process_images(image_files)
-    print("✅ Resimler işlendi!")
-    
-    # Ultra-precision grouping
-    analyzer.group_with_ultra_precision(threshold=args.threshold)
+    # Run complete analysis
+    results = analyzer.analyze_images(image_files, args.threshold)
     
     # Save results
     json_file, summary_file = analyzer.save_ultra_results(args.output)
     
-    print(f"\n📊 SONUÇLAR:")
-    print(f"   Toplam resim: {len(analyzer.processed_images)}")
-    print(f"   Grup sayısı: {len(analyzer.groups)}")
+    print(f"\n📊 RESULTS:")
+    print(f"   Total images: {results['total_photos']}")
+    print(f"   Groups found: {len(results['groups'])}")
     
-    for i, group in enumerate(analyzer.groups, 1):
-        print(f"   Grup {i}: {len(group['images'])} resim (Confidence: {group['confidence']:.1f}%)")
+    for i, group in enumerate(results['groups'], 1):
+        print(f"   Group {i}: {len(group['images'])} images (Confidence: {group['confidence']:.1f}%)")
     
-    print(f"\n📁 Kaydedilen dosyalar:")
+    print(f"\n📁 Files saved:")
     print(f"   - {json_file}")
     print(f"   - {summary_file}")
     
-    print("\n🎉 ULTRA-PRECISION ANALİZ TAMAMLANDI!")
+    print("\n🎉 ANALYSIS COMPLETED!")
 
 if __name__ == "__main__":
     main() 

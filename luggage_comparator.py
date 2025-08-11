@@ -36,14 +36,7 @@ except ImportError as e:
     logger.warning(f"CLIP not available: {e}")
     logger.info("Install with: pip install transformers")
 
-try:
-    import faiss
-    FAISS_AVAILABLE = True
-    logger.info("FAISS is available for efficient similarity search")
-except ImportError as e:
-    FAISS_AVAILABLE = False
-    logger.warning(f"FAISS not available: {e}")
-    logger.info("Install with: pip install faiss-cpu")
+# FAISS removed - not used in main analyzer
 
 
 class LuggageComparator:
@@ -91,8 +84,6 @@ class LuggageComparator:
         self.sam_predictor = None
         self.clip_model = None
         self.clip_processor = None
-        self.embeddings_db = {}
-        self.faiss_index = None
         
         # Model setup with error handling
         self.sam_model_type = sam_model_type
@@ -737,78 +728,11 @@ class LuggageComparator:
         
         return similarity_percentage
     
-    def add_to_database(self, image_id: str, image_path: str, **kwargs) -> np.ndarray:
-        """Add image embedding to database."""
-        embedding = self.process_image(image_path, **kwargs)
-        self.embeddings_db[image_id] = embedding
-        return embedding
-    
-    def find_similar_images(
-        self, 
-        query_image_path: str, 
-        top_k: int = 5,
-        threshold: float = 0.0,
-        **kwargs
-    ) -> List[Tuple[str, float]]:
-        """
-        Find similar images in the database.
-        
-        Args:
-            query_image_path: Path to query image
-            top_k: Number of top results to return
-            threshold: Minimum similarity threshold (0-100)
-            **kwargs: Additional arguments for process_image
-            
-        Returns:
-            List of (image_id, similarity_percentage) tuples
-        """
-        if not self.embeddings_db:
-            return []
-        
-        # Process query image
-        query_embedding = self.process_image(query_image_path, **kwargs)
-        
-        # Compare with all images in database
-        similarities = []
-        for image_id, embedding in self.embeddings_db.items():
-            similarity = cosine_similarity([query_embedding], [embedding])[0][0]
-            similarity_percentage = (similarity + 1) / 2 * 100
-            
-            if similarity_percentage >= threshold:
-                similarities.append((image_id, similarity_percentage))
-        
-        # Sort by similarity (descending)
-        similarities.sort(key=lambda x: x[1], reverse=True)
-        
-        return similarities[:top_k]
-    
-    def setup_faiss_index(self, embedding_dim: int = 512):
-        """Setup FAISS index for efficient similarity search."""
-        if not FAISS_AVAILABLE:
-            print("FAISS not available - using linear search")
-            return
-        
-        self.faiss_index = faiss.IndexFlatIP(embedding_dim)  # Inner product for cosine similarity
-        print(f"FAISS index created with dimension {embedding_dim}")
-    
-    def save_database(self, filepath: str):
-        """Save embeddings database to file."""
-        np.savez(filepath, **self.embeddings_db)
-        self.logger.info(f"Database saved to {filepath}")
-    
-    def load_database(self, filepath: str):
-        """Load embeddings database from file."""
-        data = np.load(filepath)
-        self.embeddings_db = {key: data[key] for key in data.files}
-        self.logger.info(f"Database loaded from {filepath} with {len(self.embeddings_db)} images")
+    # Database methods removed - not used in main analyzer
     
     def cleanup(self):
         """Clean up resources and free memory."""
         self.logger.info("Cleaning up LuggageComparator resources...")
-        
-        # Clear embeddings database
-        if hasattr(self, 'embeddings_db'):
-            self.embeddings_db.clear()
         
         # Clean up models (they will be cached)
         if hasattr(self, 'sam_predictor'):
@@ -819,9 +743,6 @@ class LuggageComparator:
             
         if hasattr(self, 'clip_processor'):
             self.clip_processor = None
-            
-        if hasattr(self, 'faiss_index'):
-            self.faiss_index = None
         
         # Force cleanup
         import gc
@@ -845,21 +766,9 @@ def main():
     # Initialize the comparator
     comparator = LuggageComparator()
     
-    # Example: Compare two images
-    # similarity = comparator.compare_images("luggage1.jpg", "luggage2.jpg")
-    # print(f"Similarity: {similarity:.2f}%")
-    
-    # Example: Build a database and search
-    # comparator.add_to_database("luggage_001", "path/to/luggage1.jpg")
-    # comparator.add_to_database("luggage_002", "path/to/luggage2.jpg")
-    # 
-    # similar_images = comparator.find_similar_images("query_luggage.jpg", top_k=3)
-    # for image_id, similarity in similar_images:
-    #     print(f"{image_id}: {similarity:.2f}% similar")
-    
     print("LuggageComparator initialized successfully!")
     print("Use comparator.compare_images(img1, img2) to compare two images")
-    print("Use comparator.add_to_database(id, path) to build a searchable database")
+    print("Use comparator.process_image(path) to get embeddings")
 
 
 if __name__ == "__main__":
