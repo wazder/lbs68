@@ -313,8 +313,8 @@ class UltraPrecisionAnalyzer:
         edge_sim = self._calculate_edge_similarity(img1_data['features']['edges'], img2_data['features']['edges'])
         similarities['edges'] = edge_sim
         
-        # Weighted combination - Color prioritized for luggage analysis
-        weights = {'color': 0.50, 'shape': 0.25, 'clip': 0.15, 'texture': 0.08, 'edges': 0.02}
+        # Balanced weighting for better luggage separation
+        weights = {'clip': 0.35, 'color': 0.30, 'shape': 0.25, 'texture': 0.08, 'edges': 0.02}
         final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
         
         return final_similarity
@@ -377,7 +377,7 @@ class UltraPrecisionAnalyzer:
         
         return density_sim * 100
     
-    def group_with_ultra_precision(self, threshold: float = 90.0):
+    def group_with_ultra_precision(self, threshold: float = 75.0):
         """Ultra-precision grouping."""
         self.logger.info("🎯 ULTRA-PRECISION GROUPING BAŞLIYOR!")
         
@@ -557,7 +557,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Ultra-Precision Luggage Analysis")
     parser.add_argument("--folder", default="input", help="Input folder path")
-    parser.add_argument("--threshold", type=float, default=90.0, help="Similarity threshold (60-95)")
+    parser.add_argument("--threshold", type=float, default=75.0, help="Similarity threshold (60-95)")
     parser.add_argument("--output", default="output", help="Output directory")
     
     args = parser.parse_args()
