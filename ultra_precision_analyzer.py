@@ -375,7 +375,7 @@ class UltraPrecisionAnalyzer:
         
         return density_sim * 100
     
-    def group_with_ultra_precision(self, threshold: float = 60.0):
+    def group_with_ultra_precision(self, threshold: float = 85.0):
         """Ultra-precision grouping."""
         self.logger.info("🎯 ULTRA-PRECISION GROUPING BAŞLIYOR!")
         
@@ -391,11 +391,15 @@ class UltraPrecisionAnalyzer:
                 similarity_matrix[i, j] = similarity
                 similarity_matrix[j, i] = similarity
         
-        # DBSCAN clustering with ultra-precision
-        clustering = DBSCAN(eps=threshold/100, min_samples=2, metric='precomputed')
-        
-        # Convert similarity to distance
+        # Create distance matrix (1 - similarity/100)
         distance_matrix = 1 - similarity_matrix / 100
+        
+        # DBSCAN with strict parameters for high precision
+        clustering = DBSCAN(
+            eps=1-threshold/100,  # Much stricter: only group if similarity > threshold
+            min_samples=3,  # Require at least 3 similar images to form a group 
+            metric='precomputed'
+        )
         
         # Perform clustering
         labels = clustering.fit_predict(distance_matrix)
@@ -533,15 +537,26 @@ class UltraPrecisionAnalyzer:
 
 def main():
     """Ultra-precision analysis main function."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Ultra-Precision Luggage Analysis")
+    parser.add_argument("--folder", default="input", help="Input folder path")
+    parser.add_argument("--threshold", type=float, default=85.0, help="Similarity threshold (60-95)")
+    parser.add_argument("--output", default="output", help="Output directory")
+    
+    args = parser.parse_args()
+    
     print("🔥 ULTRA-PRECISION LUGGAGE ANALYSIS 🔥")
     print("🎯 HEDEF: %100 DOĞRULUK!")
+    print(f"📁 Input: {args.folder}")
+    print(f"🎯 Threshold: {args.threshold}%")
     print("=" * 50)
     
     # Initialize analyzer
     analyzer = UltraPrecisionAnalyzer()
     
     # Get images
-    image_files = [str(f) for f in get_image_files('input')]
+    image_files = [str(f) for f in get_image_files(args.folder)]
     print(f"📁 {len(image_files)} resim işleniyor...")
     
     # Process images
@@ -549,10 +564,10 @@ def main():
     print("✅ Resimler işlendi!")
     
     # Ultra-precision grouping
-    analyzer.group_with_ultra_precision(threshold=60.0)
+    analyzer.group_with_ultra_precision(threshold=args.threshold)
     
     # Save results
-    json_file, summary_file = analyzer.save_ultra_results()
+    json_file, summary_file = analyzer.save_ultra_results(args.output)
     
     print(f"\n📊 SONUÇLAR:")
     print(f"   Toplam resim: {len(analyzer.processed_images)}")
