@@ -18,7 +18,7 @@ logger = setup_logging()
 @dataclass
 class ModelConfig:
     """Configuration for model settings."""
-    sam_model_type: str = "vit_b"
+    sam_model_type: str = "vit_h"
     sam_checkpoint_path: Optional[str] = None
     clip_model_name: str = "openai/clip-vit-base-patch32"
     device: str = "auto"

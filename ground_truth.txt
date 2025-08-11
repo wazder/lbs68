@@ -1,0 +1,11 @@
+Ground Truth - Mutlak Doğru Gruplandırmalar
+=============================================
+
+Grup 1 (Valiz A): a01.jpeg, a02.jpeg, a03.jpeg, a04.jpeg
+Grup 2 (Valiz B): b01.jpeg, b02.jpeg, b03.jpeg, b04.jpeg  
+Grup 3 (Valiz C): c01.jpeg, c02.jpeg, c03.jpeg, c04.jpeg
+Grup 4 (Valiz D): d01.jpeg, d02.jpeg, d03.jpeg, d04.jpeg
+Grup 5 (Valiz Değil): e01.jpeg, e02.jpeg, e03.jpeg, e04.jpeg
+
+Toplam: 5 grup (4 valiz grubu + 1 valiz-olmayan grup)
+Tarih: 2025-08-11

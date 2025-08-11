@@ -191,8 +191,8 @@ checkpoints/
 model_cache/
 
 # Analysis data and results
-input/*
-!input/.gitkeep
+#input/*
+#!input/.gitkeep
 output/*
 !output/.gitkeep
 !output/README.md
