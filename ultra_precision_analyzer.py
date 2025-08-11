@@ -377,7 +377,7 @@ class UltraPrecisionAnalyzer:
         
         return density_sim * 100
     
-    def group_with_ultra_precision(self, threshold: float = 75.0):
+    def group_with_ultra_precision(self, threshold: float = 88.0):
         """Ultra-precision grouping."""
         self.logger.info("🎯 ULTRA-PRECISION GROUPING BAŞLIYOR!")
         
@@ -393,36 +393,50 @@ class UltraPrecisionAnalyzer:
                 similarity_matrix[i, j] = similarity
                 similarity_matrix[j, i] = similarity
         
-        # Create distance matrix (1 - similarity/100)
-        distance_matrix = 1 - similarity_matrix / 100
-        
-        # DBSCAN with strict parameters for high precision
-        clustering = DBSCAN(
-            eps=1-threshold/100,  # Much stricter: only group if similarity > threshold
-            min_samples=2,  # Allow smaller groups to form more precise clusters
-            metric='precomputed'
-        )
-        
-        # Perform clustering
-        labels = clustering.fit_predict(distance_matrix)
-        
-        # Create groups
+        # Create groups using threshold-based approach instead of DBSCAN
         self.groups = []
-        unique_labels = set(labels)
+        used_images = set()
         
-        for label in unique_labels:
-            if label == -1:  # Noise points (individual photos)
+        for i in range(n_images):
+            if image_ids[i] in used_images:
                 continue
             
-            group_indices = np.where(labels == label)[0]
-            group_images = [image_ids[i] for i in group_indices]
+            # Start new group with this image
+            current_group = [image_ids[i]]
+            used_images.add(image_ids[i])
             
-            if len(group_images) >= 2:
+            # Find all images similar enough to this one
+            for j in range(i+1, n_images):
+                if image_ids[j] in used_images:
+                    continue
+                
+                # Check if similar to ANY image in current group
+                max_similarity = 0
+                for group_img_id in current_group:
+                    group_idx = image_ids.index(group_img_id)
+                    similarity = similarity_matrix[group_idx, j]
+                    max_similarity = max(max_similarity, similarity)
+                
+                # If similar enough, add to group
+                if max_similarity >= threshold:
+                    current_group.append(image_ids[j])
+                    used_images.add(image_ids[j])
+            
+            # Only create group if more than 1 image
+            if len(current_group) >= 2:
+                group_similarities = []
+                for g_i, img1 in enumerate(current_group):
+                    for g_j, img2 in enumerate(current_group):
+                        if g_i < g_j:
+                            idx1 = image_ids.index(img1)
+                            idx2 = image_ids.index(img2)
+                            group_similarities.append(similarity_matrix[idx1, idx2])
+                
                 group = {
-                    'images': group_images,
-                    'confidence': np.mean([similarity_matrix[i, j] for i in group_indices for j in group_indices if i != j]),
+                    'images': current_group,
+                    'confidence': np.mean(group_similarities) if group_similarities else 0,
                     'similarities': {},
-                    'common_features': self._analyze_group_features(group_images)
+                    'common_features': self._analyze_group_features(current_group)
                 }
                 self.groups.append(group)
         
@@ -557,7 +571,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Ultra-Precision Luggage Analysis")
     parser.add_argument("--folder", default="input", help="Input folder path")
-    parser.add_argument("--threshold", type=float, default=75.0, help="Similarity threshold (60-95)")
+    parser.add_argument("--threshold", type=float, default=88.0, help="Similarity threshold (60-95)")
     parser.add_argument("--output", default="output", help="Output directory")
     
     args = parser.parse_args()
