@@ -198,9 +198,9 @@ def interactive_mode():
     # Get similarity threshold
     while True:
         try:
-            threshold_str = input("Enter similarity threshold (60-95) [75]: ").strip()
+            threshold_str = input("Enter similarity threshold (60-95) [85]: ").strip()
             if not threshold_str:
-                threshold = 75.0
+                threshold = 85.0
                 break
             threshold = float(threshold_str)
             if 60 <= threshold <= 95:
