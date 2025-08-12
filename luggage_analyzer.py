@@ -501,12 +501,13 @@ class LuggageAnalyzer:
         # Convert similarity to distance matrix for DBSCAN
         distance_matrix = 100 - similarity_matrix  # Higher similarity -> lower distance
         
-        # Try different eps values based on stages
-        best_eps = 100 - stage2_threshold  # Use stage 2 threshold
+        # RELAXED PARAMETERS for fewer, larger groups
+        # Use significantly lower threshold to create bigger groups
+        relaxed_threshold = max(threshold - 8.0, 82.0)  # Much more permissive
+        eps = 100 - relaxed_threshold
+        min_samples = 1  # Keep at 1 for connectivity-based clustering
         
-        # DBSCAN parameters - more restrictive for better precision
-        eps = best_eps
-        min_samples = 1  # Start with 1, can increase for stricter clustering
+        self.logger.info(f"Using relaxed eps={eps:.1f} (from {relaxed_threshold:.1f}% similarity threshold)")
         
         # Apply DBSCAN clustering
         dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed')
