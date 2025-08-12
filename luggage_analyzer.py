@@ -423,9 +423,12 @@ class LuggageAnalyzer:
             self.logger.info(f"Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
             threshold = adaptive_threshold
         
-        # Create groups using strict threshold-based approach 
+        # SIMPLE connectivity-based clustering
         self.groups = []
         used_images = set()
+        
+        # Create adjacency matrix based on threshold
+        adjacency = similarity_matrix >= threshold
         
         for i in range(n_images):
             if image_ids[i] in used_images:
@@ -435,31 +438,12 @@ class LuggageAnalyzer:
             current_group = [image_ids[i]]
             used_images.add(image_ids[i])
             
-            # Find all images similar enough to this one using STRICTER criteria
-            for j in range(i+1, n_images):
-                if image_ids[j] in used_images:
-                    continue
-                
-                # STRICTER APPROACH: Must be similar to ALL images in current group
-                # This prevents cross-contamination between different luggage types
-                similarities_to_group = []
-                for group_img_id in current_group:
-                    group_idx = image_ids.index(group_img_id)
-                    similarity = similarity_matrix[group_idx, j]
-                    similarities_to_group.append(similarity)
-                
-                # Must meet minimum similarity to ALL group members
-                min_similarity = min(similarities_to_group)
-                avg_similarity = np.mean(similarities_to_group)
-                
-                # SIMPLIFIED: Just use average similarity to group (more flexible)
-                avg_threshold = threshold * 0.85  # 85% of threshold for average
-                
-                self.logger.debug(f"Comparing {image_ids[j]}: avg={avg_similarity:.1f}% (need {avg_threshold:.1f}%)")
-                
-                if avg_similarity >= avg_threshold:
-                    current_group.append(image_ids[j])
-                    used_images.add(image_ids[j])
+            # Simple approach: if similarity >= threshold, add to group
+            for j in range(n_images):
+                if j != i and image_ids[j] not in used_images:
+                    if similarity_matrix[i, j] >= threshold:
+                        current_group.append(image_ids[j])
+                        used_images.add(image_ids[j])
             
             # Create group even with single images (they might be unique luggage)
             group_similarities = []
