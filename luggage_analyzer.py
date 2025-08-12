@@ -314,42 +314,15 @@ class LuggageAnalyzer:
         return skewness
     
     def calculate_ultra_similarity(self, img1_id: str, img2_id: str) -> float:
-        """Ultra-precision similarity calculation."""
+        """Ultra-precision similarity calculation - CLIP ONLY for better accuracy."""
         img1_data = self.processed_images[img1_id]
         img2_data = self.processed_images[img2_id]
         
-        similarities = {}
-        
-        # 1. CLIP Embedding Similarity (40% weight)
+        # ONLY CLIP Embedding Similarity - most reliable for identical luggage
         clip_sim = cosine_similarity([img1_data['embedding']], [img2_data['embedding']])[0][0]
-        similarities['clip'] = (clip_sim + 1) / 2 * 100
+        clip_percentage = (clip_sim + 1) / 2 * 100
         
-        # 2. Color Similarity (25% weight)
-        color_sim = self._calculate_color_similarity(img1_data['features']['color'], img2_data['features']['color'])
-        similarities['color'] = color_sim
-        
-        # 3. Shape Similarity (20% weight)
-        shape_sim = self._calculate_shape_similarity(img1_data['features']['shape'], img2_data['features']['shape'])
-        similarities['shape'] = shape_sim
-        
-        # 4. Texture Similarity (10% weight)
-        texture_sim = self._calculate_texture_similarity(img1_data['features']['texture'], img2_data['features']['texture'])
-        similarities['texture'] = texture_sim
-        
-        # 5. Edge Similarity (5% weight)
-        edge_sim = self._calculate_edge_similarity(img1_data['features']['edges'], img2_data['features']['edges'])
-        similarities['edges'] = edge_sim
-        
-        # SIFT keypoints disabled for speed - causing hang
-        # sift_sim = self._calculate_keypoint_similarity(img1_data, img2_data) 
-        # similarities['keypoints'] = sift_sim
-        
-        # Pure visual similarity weighting - heavy emphasis on CLIP
-        # CLIP embeddings are most reliable for identical luggage detection
-        weights = {'clip': 0.70, 'color': 0.20, 'shape': 0.08, 'texture': 0.015, 'edges': 0.005}
-        final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
-        
-        return final_similarity
+        return clip_percentage
     
     def _calculate_color_similarity(self, color1: Dict, color2: Dict) -> float:
         """Calculate color similarity."""
