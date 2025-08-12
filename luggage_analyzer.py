@@ -416,6 +416,15 @@ class LuggageAnalyzer:
         self.logger.info(f"  Min: {min_sim:.1f}%, Max: {max_sim:.1f}%")
         self.logger.info(f"  Using threshold: {threshold:.1f}%")
         
+        # DEBUG: Print high similarity pairs
+        self.logger.info("HIGH SIMILARITY PAIRS (>95%):")
+        for i in range(n_images):
+            for j in range(i+1, n_images):
+                if similarity_matrix[i, j] > 95.0:
+                    img1_name = os.path.basename(self.processed_images[image_ids[i]]['path'])
+                    img2_name = os.path.basename(self.processed_images[image_ids[j]]['path'])
+                    self.logger.info(f"  {img1_name} <-> {img2_name}: {similarity_matrix[i, j]:.1f}%")
+        
         # Adaptive threshold based on similarity distribution
         if adaptive:
             # Adjust threshold based on data distribution
@@ -423,27 +432,27 @@ class LuggageAnalyzer:
             self.logger.info(f"Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
             threshold = adaptive_threshold
         
-        # SIMPLE connectivity-based clustering
+        # SMART CONNECTED COMPONENTS CLUSTERING
         self.groups = []
-        used_images = set()
+        visited = [False] * n_images
         
-        # Create adjacency matrix based on threshold
-        adjacency = similarity_matrix >= threshold
-        
-        for i in range(n_images):
-            if image_ids[i] in used_images:
-                continue
+        def dfs_connected_component(start_idx, component, threshold):
+            """DFS to find all connected images in a component"""
+            visited[start_idx] = True
+            component.append(start_idx)
             
-            # Start new group with this image
-            current_group = [image_ids[i]]
-            used_images.add(image_ids[i])
-            
-            # Simple approach: if similarity >= threshold, add to group
             for j in range(n_images):
-                if j != i and image_ids[j] not in used_images:
-                    if similarity_matrix[i, j] >= threshold:
-                        current_group.append(image_ids[j])
-                        used_images.add(image_ids[j])
+                if not visited[j] and similarity_matrix[start_idx, j] >= threshold:
+                    dfs_connected_component(j, component, threshold)
+        
+        # Find connected components using DFS
+        for i in range(n_images):
+            if not visited[i]:
+                component = []
+                dfs_connected_component(i, component, threshold)
+                
+                # Convert indices to image IDs
+                current_group = [image_ids[idx] for idx in component]
             
             # Create group even with single images (they might be unique luggage)
             group_similarities = []
