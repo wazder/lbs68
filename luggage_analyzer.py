@@ -95,7 +95,10 @@ class LuggageAnalyzer:
         # 1. CLIP Embedding
         features['clip_embedding'] = self.comparator.process_image(image_path)
         
-        # 2. SAM Segmentation
+        # 2. Perceptual Hash (for duplicate detection)
+        features['perceptual_hash'] = self._calculate_perceptual_hash(image)
+        
+        # 3. SAM Segmentation
         if self.comparator.sam_predictor is not None:
             mask = self.comparator.segment_luggage(image)
             features['mask'] = mask
@@ -313,16 +316,67 @@ class LuggageAnalyzer:
             skewness.append(skew)
         return skewness
     
+    def _calculate_perceptual_hash(self, image: np.ndarray) -> int:
+        """Calculate perceptual hash for image similarity."""
+        # Resize to 8x8 for simplicity
+        resized = cv2.resize(image, (8, 8), interpolation=cv2.INTER_AREA)
+        
+        # Convert to grayscale
+        if len(resized.shape) == 3:
+            gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = resized
+        
+        # Calculate average pixel value
+        avg = np.mean(gray)
+        
+        # Create binary hash based on whether each pixel is above average
+        hash_bits = []
+        for row in gray:
+            for pixel in row:
+                hash_bits.append(1 if pixel > avg else 0)
+        
+        # Convert binary list to integer
+        hash_value = 0
+        for bit in hash_bits:
+            hash_value = (hash_value << 1) | bit
+            
+        return hash_value
+    
     def calculate_ultra_similarity(self, img1_id: str, img2_id: str) -> float:
-        """Ultra-precision similarity calculation - CLIP ONLY for better accuracy."""
+        """Ultra-precision similarity calculation with weighted features."""
         img1_data = self.processed_images[img1_id]
         img2_data = self.processed_images[img2_id]
         
-        # ONLY CLIP Embedding Similarity - most reliable for identical luggage
-        clip_sim = cosine_similarity([img1_data['embedding']], [img2_data['embedding']])[0][0]
-        clip_percentage = (clip_sim + 1) / 2 * 100
+        similarities = {}
         
-        return clip_percentage
+        # 1. CLIP Embedding Similarity (primary - 85% weight)
+        clip_sim = cosine_similarity([img1_data['embedding']], [img2_data['embedding']])[0][0]
+        similarities['clip'] = (clip_sim + 1) / 2 * 100
+        
+        # 2. Color Histogram Similarity (secondary - 10% weight)
+        if 'color' in img1_data['features'] and 'color' in img2_data['features']:
+            color_sim = self._calculate_color_similarity(img1_data['features']['color'], img2_data['features']['color'])
+            similarities['color'] = color_sim
+        else:
+            similarities['color'] = similarities['clip']  # Fallback to CLIP
+        
+        # 3. Perceptual Hash Similarity (tertiary - 5% weight)
+        if 'perceptual_hash' in img1_data['features'] and 'perceptual_hash' in img2_data['features']:
+            hash1 = img1_data['features']['perceptual_hash']
+            hash2 = img2_data['features']['perceptual_hash']
+            # Calculate Hamming distance and convert to similarity
+            hamming_dist = bin(hash1 ^ hash2).count('1')
+            hash_similarity = max(0, (64 - hamming_dist) / 64 * 100)  # 64-bit hash
+            similarities['hash'] = hash_similarity
+        else:
+            similarities['hash'] = similarities['clip']  # Fallback to CLIP
+        
+        # Weighted combination
+        weights = {'clip': 0.85, 'color': 0.10, 'hash': 0.05}
+        final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
+        
+        return final_similarity
     
     def _calculate_color_similarity(self, color1: Dict, color2: Dict) -> float:
         """Calculate color similarity."""
@@ -432,27 +486,54 @@ class LuggageAnalyzer:
             self.logger.info(f"Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
             threshold = adaptive_threshold
         
-        # SMART CONNECTED COMPONENTS CLUSTERING
+        # MULTI-STAGE CLUSTERING for better precision
         self.groups = []
-        visited = [False] * n_images
         
-        def dfs_connected_component(start_idx, component, threshold):
-            """DFS to find all connected images in a component"""
-            visited[start_idx] = True
-            component.append(start_idx)
-            
-            for j in range(n_images):
-                if not visited[j] and similarity_matrix[start_idx, j] >= threshold:
-                    dfs_connected_component(j, component, threshold)
+        # Stage 1: Very high threshold for core pairs (98%)
+        stage1_threshold = min(98.0, threshold + 2.0)
+        # Stage 2: High threshold for extensions (95%) 
+        stage2_threshold = min(95.0, threshold + 1.0)
+        # Stage 3: Main threshold for final grouping
+        stage3_threshold = threshold
         
-        # Find connected components using DFS
-        for i in range(n_images):
-            if not visited[i]:
-                component = []
-                dfs_connected_component(i, component, threshold)
-                
-                # Convert indices to image IDs
-                current_group = [image_ids[idx] for idx in component]
+        self.logger.info(f"Multi-stage clustering: {stage1_threshold:.1f}% -> {stage2_threshold:.1f}% -> {stage3_threshold:.1f}%")
+        
+        # Convert similarity to distance matrix for DBSCAN
+        distance_matrix = 100 - similarity_matrix  # Higher similarity -> lower distance
+        
+        # Try different eps values based on stages
+        best_eps = 100 - stage2_threshold  # Use stage 2 threshold
+        
+        # DBSCAN parameters - more restrictive for better precision
+        eps = best_eps
+        min_samples = 1  # Start with 1, can increase for stricter clustering
+        
+        # Apply DBSCAN clustering
+        dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed')
+        cluster_labels = dbscan.fit_predict(distance_matrix)
+        
+        self.logger.info(f"DBSCAN found {len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)} clusters")
+        self.logger.info(f"Noise points: {list(cluster_labels).count(-1)}")
+        
+        # Create groups from DBSCAN clusters
+        unique_labels = set(cluster_labels)
+        for label in unique_labels:
+            if label == -1:  # Noise points
+                # Create individual groups for noise points
+                noise_indices = [i for i, l in enumerate(cluster_labels) if l == -1]
+                for idx in noise_indices:
+                    current_group = [image_ids[idx]]
+                    group = {
+                        'images': current_group,
+                        'confidence': 100.0,  # Single image, perfect confidence
+                        'similarities': {},
+                        'common_features': self._analyze_group_features(current_group)
+                    }
+                    self.groups.append(group)
+            else:
+                # Regular cluster
+                cluster_indices = [i for i, l in enumerate(cluster_labels) if l == label]
+                current_group = [image_ids[idx] for idx in cluster_indices]
                 
                 # Calculate group similarities
                 group_similarities = []
