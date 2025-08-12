@@ -372,9 +372,16 @@ class LuggageAnalyzer:
         else:
             similarities['hash'] = similarities['clip']  # Fallback to CLIP
         
-        # Weighted combination
-        weights = {'clip': 0.85, 'color': 0.10, 'hash': 0.05}
+        # ENHANCED weighted combination with material/shape emphasis
+        # Higher weight on color and hash for better same-luggage detection
+        weights = {'clip': 0.70, 'color': 0.20, 'hash': 0.10}
         final_similarity = sum(similarities[key] * weights[key] for key in weights.keys())
+        
+        # Bonus for very high individual similarities (same material/shape)
+        if similarities['color'] > 95.0:  # Very similar color
+            final_similarity = min(100.0, final_similarity * 1.05)
+        if similarities['hash'] > 90.0:  # Very similar structure
+            final_similarity = min(100.0, final_similarity * 1.03)
         
         return final_similarity
     
@@ -539,6 +546,9 @@ class LuggageAnalyzer:
         
         self.logger.info(f"Using threshold {best_threshold:.1f}% for {best_group_count} groups (target: {target_groups})")
         
+        # ANTI-SINGLETON: Avoid single-photo groups by using lower threshold for isolated images
+        secondary_threshold = best_threshold - 3.0  # 3% lower for isolated images
+        
         # Now create groups with the best threshold
         visited = [False] * n_images
         
@@ -547,11 +557,19 @@ class LuggageAnalyzer:
                 current_group = [image_ids[i]]
                 visited[i] = True
                 
-                # Find all connected images
+                # Find all connected images with main threshold
                 for j in range(i+1, n_images):
                     if not visited[j] and similarity_matrix[i, j] >= best_threshold:
                         current_group.append(image_ids[j])
                         visited[j] = True
+                
+                # If still single image, try with lower threshold to find companions
+                if len(current_group) == 1:
+                    for j in range(n_images):
+                        if j != i and not visited[j] and similarity_matrix[i, j] >= secondary_threshold:
+                            current_group.append(image_ids[j])
+                            visited[j] = True
+                            break  # Only add one companion to avoid over-grouping
                 
                 # Calculate group similarities
                 group_similarities = []
