@@ -452,13 +452,12 @@ class LuggageAnalyzer:
                 min_similarity = min(similarities_to_group)
                 avg_similarity = np.mean(similarities_to_group)
                 
-                # PURE VISUAL MODE: More flexible for same luggage from different angles
-                min_threshold = threshold * 0.80  # 80% of threshold for weakest link
-                avg_threshold = threshold * 0.90  # 90% of threshold for average
+                # SIMPLIFIED: Just use average similarity to group (more flexible)
+                avg_threshold = threshold * 0.85  # 85% of threshold for average
                 
-                self.logger.debug(f"Comparing {image_ids[j]}: min={min_similarity:.1f}% (need {min_threshold:.1f}%), avg={avg_similarity:.1f}% (need {avg_threshold:.1f}%)")
+                self.logger.debug(f"Comparing {image_ids[j]}: avg={avg_similarity:.1f}% (need {avg_threshold:.1f}%)")
                 
-                if min_similarity >= min_threshold and avg_similarity >= avg_threshold:
+                if avg_similarity >= avg_threshold:
                     current_group.append(image_ids[j])
                     used_images.add(image_ids[j])
             
