@@ -468,7 +468,7 @@ class LuggageAnalyzer:
                     'images': current_group,
                     'confidence': np.mean(group_similarities) if group_similarities else 100.0,
                     'similarities': {},
-                    'features': self._analyze_group_features(current_group)
+                    'common_features': self._analyze_group_features(current_group)
                 }
                 self.groups.append(group)
         
