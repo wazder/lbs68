@@ -441,24 +441,9 @@ class LuggageAnalyzer:
             visited[start_idx] = True
             component.append(start_idx)
             
-            # Lower threshold for transitive connections (chain grouping)
-            transitive_threshold = threshold * 0.92  # 96% -> 88.3%
-            
             for j in range(n_images):
-                if not visited[j]:
-                    # Direct connection with main threshold
-                    if similarity_matrix[start_idx, j] >= threshold:
-                        dfs_connected_component(j, component, threshold)
-                    # Transitive connection with lower threshold
-                    elif similarity_matrix[start_idx, j] >= transitive_threshold:
-                        # Check if j is highly similar to any existing component member
-                        should_add = False
-                        for comp_idx in component:
-                            if similarity_matrix[comp_idx, j] >= transitive_threshold:
-                                should_add = True
-                                break
-                        if should_add:
-                            dfs_connected_component(j, component, threshold)
+                if not visited[j] and similarity_matrix[start_idx, j] >= threshold:
+                    dfs_connected_component(j, component, threshold)
         
         # Find connected components using DFS
         for i in range(n_images):
