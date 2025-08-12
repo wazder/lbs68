@@ -501,14 +501,14 @@ class LuggageAnalyzer:
         # Convert similarity to distance matrix for DBSCAN
         distance_matrix = 100 - similarity_matrix  # Higher similarity -> lower distance
         
-        # TARGET 5 GROUPS - Much more restrictive parameters
-        # Use higher threshold to force separation
-        restrictive_threshold = max(threshold + 1.0, 95.0)  # Higher than input threshold
-        eps = 100 - restrictive_threshold
-        min_samples = 2  # At least 2 images to form a cluster
+        # TARGET 5 GROUPS - Optimal balance for exactly 5 groups
+        # Based on debug data: mean=88.5%, we need ~90-92% for 5 groups
+        optimal_threshold = mean_sim + 2.0  # 88.5 + 2 = 90.5%
+        eps = 100 - optimal_threshold
+        min_samples = 3  # Need at least 3 images to form a cluster (4 images per group ideal)
         
-        self.logger.info(f"TARGET 5 GROUPS - Using restrictive eps={eps:.1f} (from {restrictive_threshold:.1f}% similarity threshold)")
-        self.logger.info(f"min_samples={min_samples} for stricter clustering")
+        self.logger.info(f"TARGET 5 GROUPS - Using optimal eps={eps:.1f} (from {optimal_threshold:.1f}% similarity threshold)")
+        self.logger.info(f"min_samples={min_samples} for ~4 images per group")
         
         # Apply DBSCAN clustering
         dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed')
