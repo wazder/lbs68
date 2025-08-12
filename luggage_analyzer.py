@@ -453,24 +453,24 @@ class LuggageAnalyzer:
                 
                 # Convert indices to image IDs
                 current_group = [image_ids[idx] for idx in component]
-            
-            # Create group even with single images (they might be unique luggage)
-            group_similarities = []
-            if len(current_group) > 1:
-                for g_i, img1 in enumerate(current_group):
-                    for g_j, img2 in enumerate(current_group):
-                        if g_i < g_j:
-                            idx1 = image_ids.index(img1)
-                            idx2 = image_ids.index(img2)
-                            group_similarities.append(similarity_matrix[idx1, idx2])
-            
-            group = {
-                'images': current_group,
-                'confidence': np.mean(group_similarities) if group_similarities else 100.0,
-                'similarities': {},
-                'common_features': self._analyze_group_features(current_group)
-            }
-            self.groups.append(group)
+                
+                # Calculate group similarities
+                group_similarities = []
+                if len(current_group) > 1:
+                    for g_i, img1_id in enumerate(current_group):
+                        for g_j, img2_id in enumerate(current_group):
+                            if g_i < g_j:
+                                idx1 = image_ids.index(img1_id)
+                                idx2 = image_ids.index(img2_id)
+                                group_similarities.append(similarity_matrix[idx1, idx2])
+                
+                group = {
+                    'images': current_group,
+                    'confidence': np.mean(group_similarities) if group_similarities else 100.0,
+                    'similarities': {},
+                    'features': self._analyze_group_features(current_group)
+                }
+                self.groups.append(group)
         
         # Ensure ALL images are included - create single-image groups for remaining images
         all_grouped_images = set()
