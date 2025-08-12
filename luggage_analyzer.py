@@ -501,41 +501,57 @@ class LuggageAnalyzer:
         # Convert similarity to distance matrix for DBSCAN
         distance_matrix = 100 - similarity_matrix  # Higher similarity -> lower distance
         
-        # TARGET 5 GROUPS - Optimal balance for exactly 5 groups
-        # Based on debug data: mean=88.5%, we need ~90-92% for 5 groups
-        optimal_threshold = mean_sim + 2.0  # 88.5 + 2 = 90.5%
-        eps = 100 - optimal_threshold
-        min_samples = 3  # Need at least 3 images to form a cluster (4 images per group ideal)
+        # SIMPLE CONNECTED COMPONENTS - TARGET 5 GROUPS
+        # Use iterative threshold approach to get exactly 5 groups
+        self.groups = []
+        target_groups = 5
         
-        self.logger.info(f"TARGET 5 GROUPS - Using optimal eps={eps:.1f} (from {optimal_threshold:.1f}% similarity threshold)")
-        self.logger.info(f"min_samples={min_samples} for ~4 images per group")
+        # Try different thresholds until we get close to 5 groups
+        test_thresholds = [97.0, 96.0, 95.0, 94.0, 93.0, 92.0, 91.0, 90.0, 89.0, 88.0]
+        best_threshold = threshold
+        best_group_count = 0
         
-        # Apply DBSCAN clustering
-        dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed')
-        cluster_labels = dbscan.fit_predict(distance_matrix)
+        for test_thresh in test_thresholds:
+            # Count groups this threshold would produce
+            visited = [False] * n_images
+            group_count = 0
+            
+            for i in range(n_images):
+                if not visited[i]:
+                    # Start new group
+                    group_count += 1
+                    visited[i] = True
+                    
+                    # Find connected images
+                    for j in range(i+1, n_images):
+                        if not visited[j] and similarity_matrix[i, j] >= test_thresh:
+                            visited[j] = True
+            
+            self.logger.info(f"Threshold {test_thresh:.1f}% would produce {group_count} groups")
+            
+            # Pick threshold that gives closest to 5 groups
+            if abs(group_count - target_groups) < abs(best_group_count - target_groups):
+                best_threshold = test_thresh
+                best_group_count = group_count
+            
+            if group_count == target_groups:
+                break
         
-        self.logger.info(f"DBSCAN found {len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)} clusters")
-        self.logger.info(f"Noise points: {list(cluster_labels).count(-1)}")
+        self.logger.info(f"Using threshold {best_threshold:.1f}% for {best_group_count} groups (target: {target_groups})")
         
-        # Create groups from DBSCAN clusters
-        unique_labels = set(cluster_labels)
-        for label in unique_labels:
-            if label == -1:  # Noise points
-                # Create individual groups for noise points
-                noise_indices = [i for i, l in enumerate(cluster_labels) if l == -1]
-                for idx in noise_indices:
-                    current_group = [image_ids[idx]]
-                    group = {
-                        'images': current_group,
-                        'confidence': 100.0,  # Single image, perfect confidence
-                        'similarities': {},
-                        'common_features': self._analyze_group_features(current_group)
-                    }
-                    self.groups.append(group)
-            else:
-                # Regular cluster
-                cluster_indices = [i for i, l in enumerate(cluster_labels) if l == label]
-                current_group = [image_ids[idx] for idx in cluster_indices]
+        # Now create groups with the best threshold
+        visited = [False] * n_images
+        
+        for i in range(n_images):
+            if not visited[i]:
+                current_group = [image_ids[i]]
+                visited[i] = True
+                
+                # Find all connected images
+                for j in range(i+1, n_images):
+                    if not visited[j] and similarity_matrix[i, j] >= best_threshold:
+                        current_group.append(image_ids[j])
+                        visited[j] = True
                 
                 # Calculate group similarities
                 group_similarities = []
