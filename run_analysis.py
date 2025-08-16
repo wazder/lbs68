@@ -382,14 +382,19 @@ def run_search_mode(
         analyzer = LuggageAnalyzer()
         print("[OK] Analyzer initialized successfully")
         
-        # Process input images for embeddings (no clustering)
-        print(f"\nProcessing {len(input_files)} input images...")
-        analyzer.process_images(input_files)
-        print(f"[OK] Processed {len(analyzer.processed_images)} images")
+        # First: Group input images (visual clustering)
+        print(f"\nStep 1: Grouping {len(input_files)} input images...")
+        analyzer.analyze_images(input_files)
+        print(f"[OK] Found {len(analyzer.groups)} groups")
         
-        # Direct search and match (no clustering)
-        print(f"\nSearching {len(search_files)} images...")
-        search_results = analyzer.direct_search_and_match(search_files, threshold)
+        # Display groups
+        for i, group in enumerate(analyzer.groups, 1):
+            cluster_id = group.get('cluster_id', i-1)
+            print(f"  Cluster {cluster_id}: {len(group['images'])} images")
+        
+        # Second: Search and match
+        print(f"\nStep 2: Searching {len(search_files)} images...")
+        search_results = analyzer.search_and_match(search_files, threshold)
         print("[OK] Search completed")
         
         # Display results
@@ -402,21 +407,30 @@ def run_search_mode(
             confidence = result['confidence']
             
             if result['is_match']:
-                print(f"🎯 MATCH: {search_img} → {best_match['image_name']} ({confidence:.1f}%)")
-                print(f"   Visual: {best_match['visual_similarity']:.1f}% | Profile: {best_match['profile_match']:.1f}% | Embedding: {best_match['embedding_similarity']:.1f}%")
+                status = "[MATCH]"
+                group_name = best_match.get('group_name', f"Cluster_{best_match.get('cluster_id', 'Unknown')}")
+                print(f"{status} {search_img} → {group_name} ({confidence:.1f}%)")
             else:
-                print(f"❌ NO MATCH: {search_img} → Best: {best_match['image_name'] if best_match['image_name'] else 'None'} ({confidence:.1f}%)")
+                status = "[NO MATCH]"
+                group_name = best_match.get('group_name', f"Cluster_{best_match.get('cluster_id', 'Unknown')}")
+                print(f"{status} {search_img} → Best: {group_name} ({confidence:.1f}%)")
             
             # Show potential match
             if result.get('potential_match'):
                 potential = result['potential_match']
-                print(f"🔍 POTENTIAL: {potential['image_name']} ({potential['individual_score']:.1f}%) - {potential['reason']}")
+                print(f"[POTENTIAL] → {potential['image_name']} ({potential['individual_score']:.1f}%)")
                 
-            # Show top matches if verbose
-            if verbose and result.get('all_matches'):
-                print(f"   Top 5 matches:")
-                for i, match in enumerate(result['all_matches'][:5], 1):
-                    print(f"     {i}. {match['image_name']}: {match['individual_score']:.1f}% (V:{match['visual_similarity']:.1f}% P:{match['profile_match']:.1f}%)")
+                # Show top 3 individual matches
+                if result.get('detailed_matches'):
+                    print(f"Top matches in {group_name}:")
+                    for i, match in enumerate(result['detailed_matches'][:3], 1):
+                        print(f"  {i}. {match['image_name']}: {match['individual_score']:.1f}% (V:{match['visual_similarity']:.1f}% P:{match['profile_match']:.1f}%)")
+                
+            if verbose:
+                print(f"  All cluster similarities:")
+                for sim in result['all_similarities'][:3]:  # Top 3
+                    cluster_name = sim.get('group_name', f"Cluster_{sim.get('cluster_id', 'Unknown')}")
+                    print(f"    {cluster_name}: {sim['avg_similarity']:.1f}%")
                 print()
         
         # Save results
