@@ -1,35 +1,26 @@
-# Luggage Analysis System v3.0
-## Advanced AI-Powered Luggage Owner Identification System
+# Luggage Analysis System v2.0
+## Advanced AI-Powered Luggage Grouping System
 
-A sophisticated airport luggage owner identification system that uses pure visual clustering with CLIP embeddings. Features two-stage matching: intelligent clustering followed by detailed individual comparisons. Includes offline background removal capabilities for enhanced analysis precision.
+A comprehensive system that uses SAM (Segment Anything Model) and CLIP to compare luggage photos and group identical ones with ultra-high precision using advanced computer vision techniques.
 
 ## Quick Start
 
-### 1. Luggage Owner Search (Main Use Case)
-Put luggage photos in `input` folder and search photo in `search` folder:
+### 1. Basic Analysis (Recommended)
+Put your photos in the `input` folder and run:
 ```bash
-python run_analysis.py --search --device cpu --sam-model vit_b
+python run_analysis.py
 ```
 
-### 2. Background Removal (Enhanced Accuracy)
-Remove backgrounds from luggage images for better matching:
+### 2. Interactive Mode
+For step-by-step configuration:
 ```bash
-# Virtual environment setup
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install rembg onnxruntime
-
-# Remove backgrounds
-python remove_backgrounds_offline.py
-
-# Use clean images for search
-python run_analysis.py --search --device cpu --sam-model vit_b --folder input_without_background --search-folder search_without_background
+python run_analysis.py --interactive
 ```
 
-### 3. System Analysis (Group All Images)
-For analyzing and grouping all images:
+### 3. Custom Settings
 ```bash
-python run_analysis.py --folder input --device cpu --sam-model vit_b
+python run_analysis.py --folder photos --threshold 75 --output results
+python run_analysis.py --config my_config.yaml
 ```
 
 ### 4. System Check
@@ -42,34 +33,31 @@ python run_analysis.py --test
 ## Project Structure
 ```
 lbs68/
-├── run_analysis.py                 Main entry point - START HERE
-├── input/                          Database luggage photos
-├── search/                         Search query photos  
-├── input_without_background/       Clean luggage images (backgrounds removed)
-├── search_without_background/      Clean search images (backgrounds removed)
-├── output/                         Analysis results (JSON reports)
-├── remove_backgrounds_offline.py   Offline background removal tool
-├── venv/                          Virtual environment for background removal
-├── model_cache/                   Cached AI models for faster loading
-├── config.py                      Configuration management system
-├── luggage_analyzer.py            Core visual clustering engine
-├── luggage_comparator.py          CLIP embedding extraction
-├── utils.py                       Utility functions and helpers
-├── model_cache.py                 Intelligent model caching
-└── requirements.txt               Install dependencies with this
+├── run_analysis.py          Main entry point - START HERE
+├── input/                   Drop your luggage photos here
+├── output/                  Analysis results (JSON + text reports)
+├── model_cache/             Cached AI models for faster loading
+├── config.py                Configuration management system
+├── luggage_analyzer.py      Core analysis engine
+├── luggage_comparator.py    SAM + CLIP integration
+├── utils.py                 Utility functions and helpers
+├── model_cache.py           Intelligent model caching
+├── test_system.py           System tests
+├── test_imports.py          Basic import tests
+└── requirements.txt         Install dependencies with this
 ```
 
 ## Features
 
-- **Two-Stage Matching**: First clusters visually similar luggage, then performs detailed individual comparisons
-- **Pure Visual Clustering**: Uses K-means and silhouette analysis for optimal clustering without filename dependencies
-- **CLIP Embeddings**: Advanced semantic understanding of luggage features using transformer models
-- **Background Removal**: Offline background removal using rembg for enhanced matching accuracy
-- **Potential Match System**: Returns potential matches even when confidence is below threshold
-- **Profile-Based Matching**: Analyzes color, texture, and shape profiles for comprehensive comparison
-- **MacBook M2 Optimized**: CPU-optimized processing for 8GB RAM systems
-- **Model Caching**: Intelligent caching system for faster subsequent runs
-- **Rich JSON Output**: Detailed analysis results with confidence scores and reasoning
+- **Ultra-High Accuracy**: Uses SAM segmentation + CLIP embeddings for 90%+ precision
+- **AI-Powered Analysis**: Deep learning models for color, texture, shape analysis
+- **Smart Grouping**: Intelligent clustering with confidence scores
+- **Model Caching**: Fast loading with intelligent caching system
+- **Rich Output**: JSON, text reports with detailed analysis
+- **Easy Setup**: One command installation and execution
+- **Configurable**: YAML/JSON config files + command line options
+- **Interactive Mode**: Step-by-step guided analysis
+- **Built-in Tests**: Comprehensive test suite included
 
 ## Installation
 
@@ -92,34 +80,25 @@ python run_analysis.py --test
 
 ## Complete Usage Examples
 
-### Search Commands
+### Basic Commands
 ```bash
-# Basic luggage owner search
-python run_analysis.py --search --device cpu --sam-model vit_b
+# Simple analysis
+python run_analysis.py
 
-# Search with custom folders
-python run_analysis.py --search --device cpu --sam-model vit_b --folder my_luggage --search-folder my_queries
+# Interactive mode with prompts
+python run_analysis.py --interactive
 
-# Search with background-removed images
-python run_analysis.py --search --device cpu --sam-model vit_b --folder input_without_background --search-folder search_without_background
+# Custom folder and threshold
+python run_analysis.py --folder my_photos --threshold 75
 
-# Verbose search with detailed logging
-python run_analysis.py --search --device cpu --sam-model vit_b --verbose
+# Use configuration file
+python run_analysis.py --config my_config.yaml
+
+# Verbose output with detailed logging
+python run_analysis.py --verbose
 
 # Help and all options
 python run_analysis.py --help
-```
-
-### Background Removal Commands
-```bash
-# Remove backgrounds from input images
-python remove_backgrounds_offline.py
-
-# Remove backgrounds from custom directory
-python -c "
-from remove_backgrounds_offline import remove_backgrounds_offline
-remove_backgrounds_offline('my_images', 'my_images_clean')
-"
 ```
 
 ### System Management
@@ -139,81 +118,65 @@ python run_analysis.py --cache-cleanup
 
 ### Advanced Options
 ```bash
-# Use larger SAM model for higher accuracy (requires more memory)
-python run_analysis.py --search --device cpu --sam-model vit_l
+# Specify AI model settings
+python run_analysis.py --device cuda --sam-model vit_h
 
-# Use GPU if available (CUDA/MPS)
-python run_analysis.py --search --device cuda --sam-model vit_b
+# Use filename patterns for grouping
+python run_analysis.py --use-filename-hints
 
 # Custom output directory
-python run_analysis.py --search --device cpu --sam-model vit_b --output results/search_2024
+python run_analysis.py --output results/analysis_2024
 
 # Log to file
-python run_analysis.py --search --device cpu --sam-model vit_b --log-file search.log
+python run_analysis.py --log-file analysis.log
 ```
 
 ## Example Output
 
-### Luggage Owner Search Result
 ```
-LUGGAGE SEARCH SYSTEM
+LUGGAGE ANALYSIS SYSTEM
 ========================================
-Input folder: input_without_background (24 images)
-Search folder: search_without_background (1 image)
+Input folder: input
+Found 12 images
+Similarity threshold: 87.0%
+Analysis mode: Pure Visual Similarity
+Output directory: output
 
-Step 1: Grouping 24 input images...
-[OK] Found 6 clusters
+Initializing analyzer...
+[OK] Analyzer initialized successfully
 
-Step 2: Searching for green_no_bg.png...
+Processing 12 images...
+[OK] Image processing completed
 
-🎯 BEST MATCH FOUND!
-📂 Best Cluster: Cluster 3 (86.2% match)
-🔍 Individual Match: a03_no_bg.png (91.4% confidence)
-   Visual: 89.2% | Profile: 94.1% | Embedding: 90.9%
+Saving results...
+[OK] Results saved successfully
 
-🔍 POTENTIAL MATCHES in cluster:
-   → a01_no_bg.png (87.3% confidence)  
-   → a02_no_bg.png (85.7% confidence)
-   → a04_no_bg.png (83.1% confidence)
+ANALYSIS RESULTS
+--------------------
+Total images processed: 12
+Groups identified: 4
 
-📁 Results saved: output/search_results_20241216_235531.json
-```
+Group 1: 4 images [HIGH] (92.3% confidence)
+Group 2: 3 images [HIGH] (89.7% confidence)  
+Group 3: 3 images [MEDIUM] (78.2% confidence)
+Group 4: 2 images [HIGH] (91.5% confidence)
 
-### Background Removal Output
-```
-🔍 Found 24 images to process...
-🔄 Processing: a01.jpeg
-✅ Saved: a01_no_bg.png
-🔄 Processing: a02.jpeg  
-✅ Saved: a02_no_bg.png
-...
-🎉 Background removal completed!
-📊 Processed: 24/24 images
-📁 Output directory: input_without_background
+FILES CREATED:
+   Detailed report: output/ultra_precision_report_20241211_143022.json
+   Summary report: output/ultra_precision_summary_20241211_143022.txt
+
+Analysis completed successfully!
 ```
 
 ## How It Works
 
-### Two-Stage Matching Process
-
-**Stage 1: Visual Clustering**
-1. **CLIP Embedding Extraction**: Generate semantic feature vectors for all luggage images
-2. **K-means Clustering**: Group visually similar luggage using optimal cluster count (silhouette analysis)
-3. **Cluster Selection**: Find the cluster with highest similarity to search query
-
-**Stage 2: Individual Matching**
-1. **Detailed Comparison**: Compare search query with each image in the best cluster
-2. **Multi-Factor Analysis**: 
-   - Visual similarity (60% weight)
-   - Profile matching (30% weight) - color, texture, shape analysis
-   - Embedding similarity (10% weight)
-3. **Confidence Scoring**: Combine all factors for final confidence score
-4. **Potential Matches**: Return matches even below main threshold for human review
-
-### Background Removal Process
-1. **rembg Integration**: Uses U2-Net model for precise background removal
-2. **Offline Processing**: No internet required, fully local processing
-3. **PNG Output**: Maintains transparency for clean luggage isolation
+1. **Image Loading**: Validates and loads luggage photos
+2. **SAM Segmentation**: Isolates luggage from background/people  
+3. **CLIP Embeddings**: Generates semantic feature vectors
+4. **Feature Analysis**: Extracts color, shape, texture properties
+5. **Similarity Calculation**: Multi-level similarity comparison
+6. **Smart Grouping**: Clusters identical luggage with confidence
+7. **Report Generation**: Creates JSON + human-readable summaries
 
 ## Configuration
 
@@ -236,21 +199,18 @@ output:
 
 ## Perfect For
 
-- **Airport Lost & Found**: Match lost luggage with owner photos using two-stage identification
-- **Hotel Concierge Services**: Identify guest luggage in storage areas
-- **Cruise Ship Operations**: Organize and identify luggage during boarding/disembarkation
-- **Conference & Event Management**: Match attendee luggage with registration photos
-- **Transportation Hubs**: Identify suspicious or unclaimed luggage patterns
-- **Baggage Handling**: Quality control and tracking in baggage processing systems
+- **Airports**: Match lost luggage with owner photos
+- **Hotels**: Identify guest luggage in storage
+- **Cruise Ships**: Organize luggage during boarding
+- **Event Management**: Sort and group luggage photos
+- **Security**: Identify suspicious luggage patterns
 
 ## Troubleshooting
 
 - **Import errors**: Run `python run_analysis.py --check-deps`
-- **Memory issues on MacBook M2**: Always use `--device cpu --sam-model vit_b` for 8GB RAM
-- **Background removal issues**: Ensure virtual environment is activated: `source venv/bin/activate`
-- **No search results**: Check that both input and search folders contain valid images (JPG, PNG)
-- **Low matching accuracy**: Try background removal first, ensure good image quality and similar lighting
-- **HEIF format errors**: Convert HEIF files to JPEG: `magick input.heic output.jpg`
+- **Memory issues**: Use `--device cpu` or smaller SAM model `--sam-model vit_b`
+- **No results**: Check image formats (JPG, PNG supported)
+- **Low accuracy**: Increase `--threshold` or ensure good image quality
 
 ## Support
 
