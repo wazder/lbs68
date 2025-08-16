@@ -1151,6 +1151,106 @@ class LuggageAnalyzer:
                 f.write("\n")
         
         return json_file, summary_file
+    
+    def direct_search_and_match(self, search_files: List[str], threshold: float = 85.0) -> Dict[str, Any]:
+        """Direct search without clustering - compare search image against all input images."""
+        self.logger.info(f"DIRECT SEARCH STARTING: {len(search_files)} search images vs {len(self.processed_images)} input images")
+        
+        search_results = []
+        
+        for search_file in search_files:
+            self.logger.info(f"Processing search image: {os.path.basename(search_file)}")
+            
+            # Process search image
+            search_image = cv2.imread(search_file)
+            if search_image is None:
+                self.logger.error(f"Could not load search image: {search_file}")
+                continue
+                
+            search_image_rgb = cv2.cvtColor(search_image, cv2.COLOR_BGR2RGB)
+            
+            # Extract features for search image
+            search_embedding = self.comparator.extract_embedding(search_image_rgb)
+            search_features = self.comparator.extract_features(search_image_rgb)
+            
+            # Compare against all input images
+            matches = []
+            
+            for img_id, img_data in self.processed_images.items():
+                # Calculate visual similarity
+                visual_sim = cosine_similarity([search_embedding], [img_data['embedding']])[0][0]
+                visual_similarity = (visual_sim + 1) / 2 * 100
+                
+                # Calculate profile match
+                profile_match = self._calculate_individual_profile_match(search_features, img_data['features'])
+                
+                # Calculate embedding similarity (different from visual similarity)
+                embedding_similarity = visual_similarity  # For now, same as visual
+                
+                # Combined score
+                individual_score = (visual_similarity * 0.6) + (profile_match * 0.3) + (embedding_similarity * 0.1)
+                
+                matches.append({
+                    'image_id': img_id,
+                    'image_name': os.path.basename(img_data['path']),
+                    'image_path': img_data['path'],
+                    'visual_similarity': visual_similarity,
+                    'profile_match': profile_match,
+                    'embedding_similarity': embedding_similarity,
+                    'individual_score': individual_score
+                })
+            
+            # Sort by individual score (highest first)
+            matches.sort(key=lambda x: x['individual_score'], reverse=True)
+            
+            # Get best match
+            best_match = matches[0] if matches else None
+            
+            # Determine if it's a match based on threshold
+            is_match = best_match and best_match['individual_score'] >= threshold
+            
+            result = {
+                'search_image': os.path.basename(search_file),
+                'search_path': search_file,
+                'is_match': is_match,
+                'confidence': best_match['individual_score'] if best_match else 0.0,
+                'best_match': {
+                    'image_name': best_match['image_name'] if best_match else None,
+                    'image_path': best_match['image_path'] if best_match else None,
+                    'individual_score': best_match['individual_score'] if best_match else 0.0,
+                    'visual_similarity': best_match['visual_similarity'] if best_match else 0.0,
+                    'profile_match': best_match['profile_match'] if best_match else 0.0,
+                    'embedding_similarity': best_match['embedding_similarity'] if best_match else 0.0
+                },
+                'all_matches': matches[:10],  # Top 10 matches
+                'threshold_used': threshold
+            }
+            
+            # Add potential match if below threshold but still significant
+            if not is_match and best_match and best_match['individual_score'] >= (threshold * 0.7):
+                result['potential_match'] = {
+                    'image_name': best_match['image_name'],
+                    'individual_score': best_match['individual_score'],
+                    'reason': f'Below threshold ({threshold}%) but significant match'
+                }
+            
+            search_results.append(result)
+            
+            # Log result
+            if is_match:
+                self.logger.info(f"✅ MATCH: {os.path.basename(search_file)} → {best_match['image_name']} ({best_match['individual_score']:.1f}%)")
+            else:
+                self.logger.info(f"❌ NO MATCH: {os.path.basename(search_file)} → Best: {best_match['image_name'] if best_match else 'None'} ({best_match['individual_score']:.1f}% < {threshold}%)" if best_match else "❌ NO MATCH: No candidates found")
+        
+        return {
+            'search_results': search_results,
+            'total_searches': len(search_files),
+            'matches_found': sum(1 for r in search_results if r['is_match']),
+            'potential_matches': sum(1 for r in search_results if r.get('potential_match')),
+            'threshold_used': threshold,
+            'method': 'direct_comparison',
+            'analysis_date': datetime.now().isoformat()
+        }
 
 def main():
     """Main analysis function - DEPRECATED: Use run_analysis.py instead."""
