@@ -239,8 +239,7 @@ def run_analysis(
     input_folder: str,
     output_dir: str, 
     threshold: Optional[float] = None,
-    verbose: bool = False,
-    mode: str = "filename"
+    verbose: bool = False
 ) -> bool:
     """Run the main luggage analysis."""
     
@@ -385,7 +384,7 @@ def run_search_mode(
         
         # First: Group input images (visual clustering)
         print(f"\nStep 1: Grouping {len(input_files)} input images...")
-        analyzer.analyze_images(input_files, mode="visual_clustering")
+        analyzer.analyze_images(input_files)
         print(f"[OK] Found {len(analyzer.groups)} groups")
         
         # Display groups
@@ -531,8 +530,7 @@ def main():
                 input_folder=args.folder,
                 output_dir=args.output,
                 threshold=args.threshold,
-                verbose=args.verbose,
-                mode="visual_clustering"  # Use pure visual clustering by default
+                verbose=args.verbose
             )
             sys.exit(0 if success else 1)
     

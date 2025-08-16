@@ -13,10 +13,8 @@ from typing import List, Dict, Any, Tuple
 from pathlib import Path
 import torch
 from PIL import Image
-import faiss
 from sklearn.cluster import DBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
-import matplotlib.pyplot as plt
 
 from luggage_comparator import LuggageComparator
 from utils import get_image_files, setup_logging
@@ -42,7 +40,7 @@ class LuggageAnalyzer:
         self.keypoint_matching = True
         self.adaptive_threshold = True
     
-    def analyze_images(self, image_paths: List[str], threshold: float = None, mode: str = "filename") -> Dict[str, Any]:
+    def analyze_images(self, image_paths: List[str], threshold: float = None) -> Dict[str, Any]:
         """Main analysis method - process and group images."""
         if threshold is not None:
             self.similarity_threshold = threshold
@@ -52,11 +50,8 @@ class LuggageAnalyzer:
         # Process all images
         self.process_images(image_paths)
         
-        # Group similar images based on mode
-        if mode == "visual_clustering":
-            self.group_by_visual_clustering()
-        else:
-            self.group_with_ultra_precision(self.similarity_threshold, adaptive=False)
+        # Use visual clustering
+        self.group_by_visual_clustering()
         
         # Return results
         return {
@@ -66,9 +61,6 @@ class LuggageAnalyzer:
             'analysis_date': datetime.now().isoformat()
         }
         
-    def group_similar_luggage(self):
-        """Compatibility method for old interface."""
-        return self.group_with_ultra_precision(self.similarity_threshold, adaptive=False)
         
     def process_images(self, image_paths: List[str]):
         """Advanced precision image processing."""
@@ -450,182 +442,6 @@ class LuggageAnalyzer:
         """SIFT keypoint similarity - DISABLED for performance."""
         # DISABLED: Too slow, causing system hang
         return 0
-    
-    def group_with_ultra_precision(self, threshold: float = 90.0, adaptive=True):
-        """Ultra-precision grouping."""
-        self.logger.info(f"ULTRA-PRECISION GROUPING STARTING with PURE VISUAL SIMILARITY v4.0")
-        self.logger.info(f"Using pure visual similarity threshold: {threshold:.1f}%")
-        
-        image_ids = list(self.processed_images.keys())
-        n_images = len(image_ids)
-        
-        # Calculate similarity matrix
-        similarity_matrix = np.zeros((n_images, n_images))
-        
-        for i in range(n_images):
-            for j in range(i+1, n_images):
-                similarity = self.calculate_ultra_similarity(image_ids[i], image_ids[j])
-                similarity_matrix[i, j] = similarity
-                similarity_matrix[j, i] = similarity
-        
-        # Debug: Print similarity statistics
-        similarities_flat = similarity_matrix[similarity_matrix > 0].flatten()
-        mean_sim = np.mean(similarities_flat)
-        std_sim = np.std(similarities_flat)
-        max_sim = np.max(similarities_flat)
-        min_sim = np.min(similarities_flat)
-        
-        self.logger.info(f"SIMILARITY STATISTICS:")
-        self.logger.info(f"  Mean: {mean_sim:.1f}%, Std: {std_sim:.1f}%")
-        self.logger.info(f"  Min: {min_sim:.1f}%, Max: {max_sim:.1f}%")
-        self.logger.info(f"  Using threshold: {threshold:.1f}%")
-        
-        # DEBUG: Print high similarity pairs
-        self.logger.info("HIGH SIMILARITY PAIRS (>95%):")
-        for i in range(n_images):
-            for j in range(i+1, n_images):
-                if similarity_matrix[i, j] > 95.0:
-                    img1_name = os.path.basename(self.processed_images[image_ids[i]]['path'])
-                    img2_name = os.path.basename(self.processed_images[image_ids[j]]['path'])
-                    self.logger.info(f"  {img1_name} <-> {img2_name}: {similarity_matrix[i, j]:.1f}%")
-        
-        # Adaptive threshold based on similarity distribution
-        if adaptive:
-            # Adjust threshold based on data distribution
-            adaptive_threshold = min(threshold, mean_sim + 1.5 * std_sim)
-            self.logger.info(f"Adaptive threshold: {adaptive_threshold:.1f}% (original: {threshold:.1f}%)")
-            threshold = adaptive_threshold
-        
-        # MULTI-STAGE CLUSTERING for better precision
-        self.groups = []
-        
-        # Stage 1: Very high threshold for core pairs (98%)
-        stage1_threshold = min(98.0, threshold + 2.0)
-        # Stage 2: High threshold for extensions (95%) 
-        stage2_threshold = min(95.0, threshold + 1.0)
-        # Stage 3: Main threshold for final grouping
-        stage3_threshold = threshold
-        
-        self.logger.info(f"Multi-stage clustering: {stage1_threshold:.1f}% -> {stage2_threshold:.1f}% -> {stage3_threshold:.1f}%")
-        
-        # Convert similarity to distance matrix for DBSCAN
-        distance_matrix = 100 - similarity_matrix  # Higher similarity -> lower distance
-        
-        # IMPROVED GROUPING ALGORITHM - TARGET EXACTLY 5 GROUPS
-        # Higher thresholds for better separation, filename-aware grouping
-        self.groups = []
-        target_groups = 5
-        
-        # Wide threshold range to find exact 5 groups
-        test_thresholds = [99.0, 98.0, 97.0, 96.0, 95.0, 94.0, 93.0, 92.0, 91.0, 90.0, 89.0, 88.0, 87.0, 86.0, 85.0, 84.0, 83.0, 82.0, 81.0, 80.0]
-        best_threshold = threshold
-        best_group_count = 0
-        
-        # Pure similarity-based grouping only
-        # Try threshold-based approach with higher precision
-        for test_thresh in test_thresholds:
-            # Count groups this threshold would produce
-            visited = [False] * n_images
-            group_count = 0
-            
-            for i in range(n_images):
-                if not visited[i]:
-                    # Start new group
-                    group_count += 1
-                    visited[i] = True
-                    
-                    # Find connected images with stricter criteria
-                    for j in range(i+1, n_images):
-                        if not visited[j] and similarity_matrix[i, j] >= test_thresh:
-                            visited[j] = True
-            
-            self.logger.info(f"Threshold {test_thresh:.1f}% would produce {group_count} groups")
-            
-            # Pick threshold that gives exactly 5 groups, or closest
-            if group_count == target_groups:
-                best_threshold = test_thresh
-                best_group_count = group_count
-                break
-            elif abs(group_count - target_groups) < abs(best_group_count - target_groups):
-                best_threshold = test_thresh
-                best_group_count = group_count
-                
-            # If we have too many groups, force lower threshold to merge some
-            if group_count > target_groups and best_group_count == 0:
-                best_threshold = test_thresh
-                best_group_count = group_count
-        
-        self.logger.info(f"Using threshold {best_threshold:.1f}% for {best_group_count} groups (target: {target_groups})")
-        
-        # NO ANTI-SINGLETON: Keep groups separate to maintain 5 groups
-        # secondary_threshold = best_threshold - 1.0  # Only 1% lower to maintain separation
-        
-        # Now create groups with the best threshold
-        visited = [False] * n_images
-        
-        for i in range(n_images):
-            if not visited[i]:
-                current_group = [image_ids[i]]
-                visited[i] = True
-                
-                # Find all connected images with main threshold
-                for j in range(i+1, n_images):
-                    if not visited[j] and similarity_matrix[i, j] >= best_threshold:
-                        current_group.append(image_ids[j])
-                        visited[j] = True
-                
-                # DISABLED: No companion finding to maintain strict 5-group separation
-                # Keep single-image groups if they don't match anything strongly
-                # This maintains the target of exactly 5 groups
-                
-                # Calculate group similarities
-                group_similarities = []
-                if len(current_group) > 1:
-                    for g_i, img1_id in enumerate(current_group):
-                        for g_j, img2_id in enumerate(current_group):
-                            if g_i < g_j:
-                                idx1 = image_ids.index(img1_id)
-                                idx2 = image_ids.index(img2_id)
-                                group_similarities.append(similarity_matrix[idx1, idx2])
-                
-                group = {
-                    'images': current_group,
-                    'confidence': np.mean(group_similarities) if group_similarities else 100.0,
-                    'similarities': {},
-                    'common_features': self._analyze_group_features(current_group)
-                }
-                self.groups.append(group)
-        
-        # Ensure ALL images are included - create single-image groups for remaining images
-        all_grouped_images = set()
-        for group in self.groups:
-            all_grouped_images.update(group['images'])
-        
-        # Add ungrouped images as individual groups
-        for image_id in image_ids:
-            if image_id not in all_grouped_images:
-                single_group = {
-                    'images': [image_id],
-                    'confidence': 100.0,  # Perfect confidence for unique items
-                    'similarities': {},
-                    'common_features': self._analyze_group_features([image_id])
-                }
-                self.groups.append(single_group)
-                self.logger.info(f"Added ungrouped image as individual group: {image_id}")
-        
-        # DISABLED: No post-processing merge to maintain exactly 5 groups
-        # self._merge_similar_groups(threshold * 1.05)
-        
-        # Final verification - ensure we have all images
-        final_grouped_images = set()
-        for group in self.groups:
-            final_grouped_images.update(group['images'])
-        
-        if len(final_grouped_images) != len(image_ids):
-            missing = set(image_ids) - final_grouped_images
-            self.logger.warning(f"Missing images detected: {missing}")
-        
-        self.logger.info(f"ULTRA-PRECISION GROUPING COMPLETED: {len(self.groups)} groups found, {len(final_grouped_images)} images processed")
     
     def group_by_visual_clustering(self):
         """Pure visual clustering using CLIP embeddings and K-means/DBSCAN."""
