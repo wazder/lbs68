@@ -1,29 +1,35 @@
 # Luggage Analysis System v2.0
-## Advanced AI-Powered Luggage Grouping System
+## Advanced AI-Powered Luggage Owner Identification System
 
-A comprehensive system that uses SAM (Segment Anything Model) and CLIP to compare luggage photos and group identical ones with ultra-high precision using advanced computer vision techniques.
+A comprehensive airport luggage owner identification system that uses SAM (Segment Anything Model) and CLIP embeddings with pure visual clustering and two-stage matching to identify luggage owners with ultra-high precision.
 
 ## Quick Start
 
-### 1. Basic Analysis (Recommended)
-Put your photos in the `input` folder and run:
+### 1. Basic Grouping (Recommended)
+Put luggage photos in the `input` folder and run:
 ```bash
 python run_analysis.py
 ```
 
-### 2. Interactive Mode
+### 2. Search Mode (Match Luggage to Owner)
+Put luggage photos in `input` folder and owner photo in `search` folder:
+```bash
+python run_analysis.py --search
+```
+
+### 3. Interactive Mode
 For step-by-step configuration:
 ```bash
 python run_analysis.py --interactive
 ```
 
-### 3. Custom Settings
+### 4. Custom Settings
 ```bash
 python run_analysis.py --folder photos --threshold 75 --output results
 python run_analysis.py --config my_config.yaml
 ```
 
-### 4. System Check
+### 5. System Check
 Before first use, verify dependencies:
 ```bash
 python run_analysis.py --check-deps
@@ -34,12 +40,16 @@ python run_analysis.py --test
 ```
 lbs68/
 ├── run_analysis.py          Main entry point - START HERE
-├── input/                   Drop your luggage photos here
+├── input/                   Drop luggage photos here
+├── input_without_background/ Background-removed luggage photos
+├── search/                  Drop owner photos here for matching
+├── search_without_background/ Background-removed owner photos
 ├── output/                  Analysis results (JSON + text reports)
 ├── model_cache/             Cached AI models for faster loading
 ├── config.py                Configuration management system
-├── luggage_analyzer.py      Core analysis engine
+├── luggage_analyzer.py      Core analysis engine with two-stage matching
 ├── luggage_comparator.py    SAM + CLIP integration
+├── remove_backgrounds.py    Background removal tool
 ├── utils.py                 Utility functions and helpers
 ├── model_cache.py           Intelligent model caching
 ├── test_system.py           System tests
@@ -49,9 +59,11 @@ lbs68/
 
 ## Features
 
+- **Two-Stage Matching**: Pure visual clustering + detailed individual matching
 - **Ultra-High Accuracy**: Uses SAM segmentation + CLIP embeddings for 90%+ precision
 - **AI-Powered Analysis**: Deep learning models for color, texture, shape analysis
-- **Smart Grouping**: Intelligent clustering with confidence scores
+- **Background Removal**: Clean image analysis with background removal support
+- **Smart Grouping**: Intelligent K-means clustering with confidence scores
 - **Model Caching**: Fast loading with intelligent caching system
 - **Rich Output**: JSON, text reports with detailed analysis
 - **Easy Setup**: One command installation and execution
@@ -171,12 +183,14 @@ Analysis completed successfully!
 ## How It Works
 
 1. **Image Loading**: Validates and loads luggage photos
-2. **SAM Segmentation**: Isolates luggage from background/people  
-3. **CLIP Embeddings**: Generates semantic feature vectors
-4. **Feature Analysis**: Extracts color, shape, texture properties
-5. **Similarity Calculation**: Multi-level similarity comparison
-6. **Smart Grouping**: Clusters identical luggage with confidence
-7. **Report Generation**: Creates JSON + human-readable summaries
+2. **Background Removal**: Optional SAM-based background removal for cleaner analysis
+3. **SAM Segmentation**: Isolates luggage from background/people  
+4. **CLIP Embeddings**: Generates semantic feature vectors
+5. **Visual Clustering**: K-means clustering for pure visual grouping
+6. **Two-Stage Search**: Cluster selection + individual detailed matching
+7. **Feature Analysis**: Extracts color, shape, texture properties
+8. **Similarity Calculation**: Multi-level similarity comparison with confidence scores
+9. **Report Generation**: Creates JSON + human-readable summaries
 
 ## Configuration
 
@@ -199,11 +213,11 @@ output:
 
 ## Perfect For
 
-- **Airports**: Match lost luggage with owner photos
-- **Hotels**: Identify guest luggage in storage
-- **Cruise Ships**: Organize luggage during boarding
-- **Event Management**: Sort and group luggage photos
-- **Security**: Identify suspicious luggage patterns
+- **Airports**: Match lost luggage with owner photos using two-stage visual matching
+- **Hotels**: Identify guest luggage in storage with high precision
+- **Cruise Ships**: Organize luggage during boarding with automated grouping
+- **Event Management**: Sort and group luggage photos efficiently
+- **Security**: Identify suspicious luggage patterns with visual clustering
 
 ## Troubleshooting
 
