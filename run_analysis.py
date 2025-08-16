@@ -74,6 +74,10 @@ Examples:
                        help="Search mode: match images in search folder to existing groups")
     parser.add_argument("--search-folder", default="search",
                        help="Search folder containing images to match (default: search)")
+    parser.add_argument("--direct", action="store_true",
+                       help="Direct search mode: compare search images directly against all input images (no clustering)")
+    parser.add_argument("--no-sam", action="store_true",
+                       help="Disable SAM segmentation (use original images)")
     parser.add_argument("--test", action="store_true",
                        help="Run system tests")
     parser.add_argument("--check-deps", action="store_true",
@@ -333,7 +337,9 @@ def run_search_mode(
     search_folder: str,
     output_dir: str,
     threshold: Optional[float] = None,
-    verbose: bool = False
+    verbose: bool = False,
+    direct_mode: bool = False,
+    use_sam: bool = True
 ) -> bool:
     """Run search mode: match images to existing groups."""
     
@@ -379,18 +385,38 @@ def run_search_mode(
     try:
         # Initialize analyzer
         print("Initializing analyzer...")
-        analyzer = LuggageAnalyzer()
+        analyzer = LuggageAnalyzer(use_sam=use_sam)
         print("[OK] Analyzer initialized successfully")
+        if use_sam:
+            print("✅ SAM segmentation enabled")
+        else:
+            print("⚠️ SAM segmentation disabled")
         
-        # Process input images for embeddings (no clustering)
-        print(f"\nProcessing {len(input_files)} input images...")
-        analyzer.process_images(input_files)
-        print(f"[OK] Processed {len(analyzer.processed_images)} images")
-        
-        # Direct search and match (no clustering)
-        print(f"\nSearching {len(search_files)} images...")
-        search_results = analyzer.direct_search_and_match(search_files, threshold)
-        print("[OK] Search completed")
+        if direct_mode:
+            # Direct mode: process images without clustering
+            print(f"\nProcessing {len(input_files)} input images (direct mode)...")
+            analyzer.process_images(input_files)
+            print(f"[OK] Processed {len(analyzer.processed_images)} images")
+            
+            # Direct search and match
+            print(f"\nDirect searching {len(search_files)} images...")
+            search_results = analyzer.direct_search_and_match(search_files, threshold)
+            print("[OK] Direct search completed")
+        else:
+            # Two-stage mode: clustering + search
+            print(f"\nStep 1: Grouping {len(input_files)} input images...")
+            analyzer.analyze_images(input_files)
+            print(f"[OK] Found {len(analyzer.groups)} groups")
+            
+            # Display groups
+            for i, group in enumerate(analyzer.groups, 1):
+                cluster_id = group.get('cluster_id', i-1)
+                print(f"  Cluster {cluster_id}: {len(group['images'])} images")
+            
+            # Second: Search and match
+            print(f"\nStep 2: Searching {len(search_files)} images...")
+            search_results = analyzer.search_and_match(search_files, threshold)
+            print("[OK] Search completed")
         
         # Display results
         print(f"\nSEARCH RESULTS")
@@ -401,28 +427,58 @@ def run_search_mode(
             best_match = result['best_match']
             confidence = result['confidence']
             
-            if result['is_match']:
-                print(f"🎯 MATCH: {search_img} → {best_match['image_name']} ({confidence:.1f}%)")
-                print(f"   Visual: {best_match['visual_similarity']:.1f}% | Profile: {best_match['profile_match']:.1f}% | Embedding: {best_match['embedding_similarity']:.1f}%")
-            else:
-                print(f"❌ NO MATCH: {search_img} → Best: {best_match['image_name'] if best_match['image_name'] else 'None'} ({confidence:.1f}%)")
-            
-            # Show potential match
-            if result.get('potential_match'):
-                potential = result['potential_match']
-                print(f"🔍 POTENTIAL: {potential['image_name']} ({potential['individual_score']:.1f}%) - {potential['reason']}")
+            if direct_mode:
+                # Direct mode display
+                if result['is_match']:
+                    print(f"🎯 MATCH: {search_img} → {best_match['image_name']} ({confidence:.1f}%)")
+                    print(f"   Visual: {best_match['visual_similarity']:.1f}% | Profile: {best_match['profile_match']:.1f}% | Embedding: {best_match['embedding_similarity']:.1f}%")
+                else:
+                    print(f"❌ NO MATCH: {search_img} → Best: {best_match['image_name'] if best_match['image_name'] else 'None'} ({confidence:.1f}%)")
                 
-            # Show top matches if verbose
-            if verbose and result.get('all_matches'):
-                print(f"   Top 5 matches:")
-                for i, match in enumerate(result['all_matches'][:5], 1):
-                    print(f"     {i}. {match['image_name']}: {match['individual_score']:.1f}% (V:{match['visual_similarity']:.1f}% P:{match['profile_match']:.1f}%)")
-                print()
+                # Show potential match
+                if result.get('potential_match'):
+                    potential = result['potential_match']
+                    print(f"🔍 POTENTIAL: {potential['image_name']} ({potential['individual_score']:.1f}%) - {potential['reason']}")
+                    
+                # Show top matches if verbose
+                if verbose and result.get('all_matches'):
+                    print(f"   Top 5 matches:")
+                    for i, match in enumerate(result['all_matches'][:5], 1):
+                        print(f"     {i}. {match['image_name']}: {match['individual_score']:.1f}% (V:{match['visual_similarity']:.1f}% P:{match['profile_match']:.1f}%)")
+                    print()
+            else:
+                # Two-stage mode display
+                best_cluster = result['best_cluster']
+                
+                if result['is_match']:
+                    print(f"🎯 BEST MATCH FOUND!")
+                    print(f"📂 Best Cluster: Cluster {best_cluster['cluster_id']} ({best_cluster['cluster_similarity']:.1f}% match)")
+                    print(f"🔍 Individual Match: {best_match['image_name']} ({confidence:.1f}% confidence)")
+                    print(f"   Visual: {best_match['visual_similarity']:.1f}% | Profile: {best_match['profile_match']:.1f}% | Embedding: {best_match['embedding_similarity']:.1f}%")
+                else:
+                    print(f"❌ NO MATCH: {search_img}")
+                    print(f"📂 Best Cluster: Cluster {best_cluster['cluster_id']} ({best_cluster['cluster_similarity']:.1f}% match)")
+                    print(f"🔍 Best Individual: {best_match['image_name'] if best_match else 'None'} ({confidence:.1f}%)")
+                
+                # Show potential match
+                if result.get('potential_match'):
+                    potential = result['potential_match']
+                    print(f"🔍 POTENTIAL: {potential['image_name']} ({potential['individual_score']:.1f}%) - {potential['reason']}")
+                    
+                # Show detailed matches in cluster
+                if result.get('detailed_matches'):
+                    print(f"🔍 POTENTIAL MATCHES in cluster:")
+                    for i, match in enumerate(result['detailed_matches'][:3], 1):
+                        print(f"   → {match['image_name']} ({match['individual_score']:.1f}% confidence)")
+                    
+                if verbose and result.get('detailed_matches'):
+                    print(f"   Top 5 matches in cluster:")
+                    for i, match in enumerate(result['detailed_matches'][:5], 1):
+                        print(f"     {i}. {match['image_name']}: {match['individual_score']:.1f}% (V:{match['visual_similarity']:.1f}% P:{match['profile_match']:.1f}%)")
+                    print()
         
         # Save results
         print("\nSaving search results...")
-        timestamp = search_results.get('timestamp', 'unknown')
-        
         # Save to JSON
         import json
         from datetime import datetime
@@ -432,13 +488,12 @@ def run_search_mode(
             'input_folder': input_folder,
             'search_folder': search_folder,
             'search_threshold': threshold,
-            'existing_groups': len(analyzer.groups),
             'search_images': len(search_files),
             'search_results': search_results['search_results']
         }
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        json_file = f"{output_dir}/search_results_{timestamp}.json"
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_file = f"{output_dir}/search_results_{timestamp_str}.json"
         
         with open(json_file, 'w') as f:
             json.dump(output_data, f, indent=2, default=str)
@@ -506,7 +561,9 @@ def main():
                 search_folder=args.search_folder,
                 output_dir=args.output,
                 threshold=args.threshold,
-                verbose=args.verbose
+                verbose=args.verbose,
+                direct_mode=args.direct,
+                use_sam=not args.no_sam
             )
             sys.exit(0 if success else 1)
         

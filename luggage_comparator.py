@@ -543,6 +543,128 @@ class LuggageComparator:
         
         return embedding.cpu().numpy().flatten()
     
+    def extract_features(self, image: np.ndarray) -> Dict[str, Any]:
+        """
+        Extract comprehensive features from image for profile matching.
+        
+        Args:
+            image: Input image as numpy array (RGB)
+            
+        Returns:
+            Dictionary containing various image features
+        """
+        features = {}
+        
+        # Basic image properties
+        features['height'], features['width'] = image.shape[:2]
+        features['aspect_ratio'] = features['width'] / features['height']
+        
+        # Color analysis
+        features['color'] = self._analyze_dominant_color(image)
+        
+        # Brightness analysis
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        features['brightness'] = np.mean(gray)
+        features['brightness_std'] = np.std(gray)
+        
+        # Texture analysis (simple)
+        features['texture_complexity'] = np.std(gray)
+        
+        return features
+    
+    def _analyze_dominant_color(self, image: np.ndarray) -> str:
+        """Analyze dominant color in image."""
+        # Convert to HSV for better color analysis
+        hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+        
+        # Get average HSV values
+        h_mean = np.mean(hsv[:, :, 0])
+        s_mean = np.mean(hsv[:, :, 1])
+        v_mean = np.mean(hsv[:, :, 2])
+        
+        # Classify color based on HSV
+        if v_mean < 50:  # Very dark
+            return "black"
+        elif v_mean > 200 and s_mean < 50:  # Very light
+            return "white"
+        elif s_mean < 50:  # Low saturation
+            return "gray"
+        elif h_mean < 15 or h_mean > 165:  # Red range
+            return "red"
+        elif 15 <= h_mean < 45:  # Orange/Yellow
+            return "orange/yellow"
+        elif 45 <= h_mean < 75:  # Green
+            return "green"
+        elif 75 <= h_mean < 105:  # Cyan
+            return "cyan"
+        elif 105 <= h_mean < 135:  # Blue
+            return "blue"
+        elif 135 <= h_mean <= 165:  # Purple/Magenta
+            return "purple"
+        else:
+            return "mixed"
+    
+    def segment_luggage(self, image: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Segment luggage from image using SAM.
+        
+        Args:
+            image: Input image as numpy array (RGB)
+            
+        Returns:
+            Segmented image with background removed, or None if segmentation fails
+        """
+        if self.sam_predictor is None:
+            self.logger.warning("SAM not available for segmentation")
+            return None
+        
+        try:
+            # Set image for SAM
+            self.sam_predictor.set_image(image)
+            
+            # Generate automatic masks
+            input_point = np.array([[image.shape[1]//2, image.shape[0]//2]])  # Center point
+            input_label = np.array([1])  # Foreground
+            
+            # Predict masks
+            masks, scores, logits = self.sam_predictor.predict(
+                point_coords=input_point,
+                point_labels=input_label,
+                multimask_output=True,
+            )
+            
+            # Select best mask (highest score)
+            best_mask_idx = np.argmax(scores)
+            best_mask = masks[best_mask_idx]
+            
+            # Apply mask to image
+            segmented_image = self.apply_mask(image, best_mask)
+            
+            return segmented_image
+            
+        except Exception as e:
+            self.logger.warning(f"SAM segmentation failed: {e}")
+            return None
+    
+    def apply_mask(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """
+        Apply binary mask to image.
+        
+        Args:
+            image: Input image (RGB)
+            mask: Binary mask
+            
+        Returns:
+            Masked image with white background
+        """
+        # Create output image with white background
+        output = np.ones_like(image) * 255
+        
+        # Apply mask
+        output[mask] = image[mask]
+        
+        return output
+    
     def detect_luggage(self, image: np.ndarray, threshold: float = 0.6) -> Dict[str, Any]:
         """
         Detect if image contains luggage using CLIP text classification.
