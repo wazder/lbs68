@@ -272,7 +272,7 @@ class LuggageComparator:
             self.logger.info("Loading CLIP model from cache...")
             try:
                 # Load processor (always load fresh as it's lightweight)
-                self.clip_processor = CLIPProcessor.from_pretrained(model_name)
+                self.clip_processor = CLIPProcessor.from_pretrained(model_name, use_fast=True)
                 
                 # Try to load model from cache
                 cached_model = cache.load_cached_model(
@@ -303,7 +303,7 @@ class LuggageComparator:
             try:
                 # Load processor first (lighter)
                 self.logger.info("Loading CLIP processor...")
-                self.clip_processor = CLIPProcessor.from_pretrained(model_name)
+                self.clip_processor = CLIPProcessor.from_pretrained(model_name, use_fast=True)
                 
                 # Load model
                 self.logger.info(f"Loading CLIP model and moving to {self.device}...")

@@ -62,7 +62,7 @@ def setup_logging(
     # Suppress third-party warnings unless in debug mode
     if level.upper() != 'DEBUG':
         warnings.filterwarnings("ignore")
-        logging.getLogger("transformers").setLevel(logging.WARNING)
+        logging.getLogger("transformers").setLevel(logging.ERROR)
         logging.getLogger("torch").setLevel(logging.WARNING)
         logging.getLogger("PIL").setLevel(logging.WARNING)
     

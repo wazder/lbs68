@@ -70,6 +70,10 @@ Examples:
     # Operation modes
     parser.add_argument("--interactive", "-i", action="store_true",
                        help="Run in interactive mode")
+    parser.add_argument("--search", action="store_true",
+                       help="Search mode: match images in search folder to existing groups")
+    parser.add_argument("--search-folder", default="search",
+                       help="Search folder containing images to match (default: search)")
     parser.add_argument("--test", action="store_true",
                        help="Run system tests")
     parser.add_argument("--check-deps", action="store_true",
@@ -235,7 +239,8 @@ def run_analysis(
     input_folder: str,
     output_dir: str, 
     threshold: Optional[float] = None,
-    verbose: bool = False
+    verbose: bool = False,
+    mode: str = "filename"
 ) -> bool:
     """Run the main luggage analysis."""
     
@@ -281,7 +286,7 @@ def run_analysis(
         
         # Run analysis
         print(f"\nProcessing {len(image_files)} images...")
-        results = analyzer.analyze_images(image_files, threshold)
+        results = analyzer.analyze_images(image_files, threshold, mode)
         print("[OK] Image processing completed")
         
         # Save results
@@ -319,6 +324,146 @@ def run_analysis(
         
     except Exception as e:
         print(f"[ERROR] Analysis failed: {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        return False
+
+def run_search_mode(
+    input_folder: str,
+    search_folder: str,
+    output_dir: str,
+    threshold: Optional[float] = None,
+    verbose: bool = False
+) -> bool:
+    """Run search mode: match images to existing groups."""
+    
+    print("LUGGAGE SEARCH SYSTEM")
+    print("=" * 40)
+    
+    # Get configuration
+    config = get_config()
+    if threshold is None:
+        threshold = 85.0  # Lower threshold for search matching
+    
+    # Validate directories
+    if not validate_directory(input_folder):
+        print(f"[ERROR] Input directory '{input_folder}' not found!")
+        return False
+        
+    if not validate_directory(search_folder):
+        print(f"[ERROR] Search directory '{search_folder}' not found!")
+        return False
+        
+    if not validate_directory(output_dir, create_if_missing=True):
+        print(f"[ERROR] Could not create output directory '{output_dir}'")
+        return False
+    
+    # Get image files
+    input_files = [str(f) for f in get_image_files(input_folder)]
+    search_files = [str(f) for f in get_image_files(search_folder)]
+    
+    if not input_files:
+        print(f"[ERROR] No valid image files found in input folder '{input_folder}'")
+        return False
+        
+    if not search_files:
+        print(f"[ERROR] No valid image files found in search folder '{search_folder}'")
+        return False
+    
+    print(f"Input folder: {input_folder} ({len(input_files)} images)")
+    print(f"Search folder: {search_folder} ({len(search_files)} images)")
+    print(f"Search threshold: {threshold}%")
+    print(f"Output directory: {output_dir}")
+    print()
+    
+    try:
+        # Initialize analyzer
+        print("Initializing analyzer...")
+        analyzer = LuggageAnalyzer()
+        print("[OK] Analyzer initialized successfully")
+        
+        # First: Group input images (visual clustering)
+        print(f"\nStep 1: Grouping {len(input_files)} input images...")
+        analyzer.analyze_images(input_files, mode="visual_clustering")
+        print(f"[OK] Found {len(analyzer.groups)} groups")
+        
+        # Display groups
+        for i, group in enumerate(analyzer.groups, 1):
+            cluster_id = group.get('cluster_id', i-1)
+            print(f"  Cluster {cluster_id}: {len(group['images'])} images")
+        
+        # Second: Search and match
+        print(f"\nStep 2: Searching {len(search_files)} images...")
+        search_results = analyzer.search_and_match(search_files, threshold)
+        print("[OK] Search completed")
+        
+        # Display results
+        print(f"\nSEARCH RESULTS")
+        print("-" * 30)
+        
+        for result in search_results['search_results']:
+            search_img = result['search_image']
+            best_match = result['best_match']
+            confidence = result['confidence']
+            
+            if result['is_match']:
+                status = "[MATCH]"
+                group_name = best_match.get('group_name', f"Cluster_{best_match.get('cluster_id', 'Unknown')}")
+                print(f"{status} {search_img} → {group_name} ({confidence:.1f}%)")
+            else:
+                status = "[NO MATCH]"
+                group_name = best_match.get('group_name', f"Cluster_{best_match.get('cluster_id', 'Unknown')}")
+                print(f"{status} {search_img} → Best: {group_name} ({confidence:.1f}%)")
+            
+            # Show potential match
+            if result.get('potential_match'):
+                potential = result['potential_match']
+                print(f"[POTENTIAL] → {potential['image_name']} ({potential['individual_score']:.1f}%)")
+                
+                # Show top 3 individual matches
+                if result.get('detailed_matches'):
+                    print(f"Top matches in {group_name}:")
+                    for i, match in enumerate(result['detailed_matches'][:3], 1):
+                        print(f"  {i}. {match['image_name']}: {match['individual_score']:.1f}% (V:{match['visual_similarity']:.1f}% P:{match['profile_match']:.1f}%)")
+                
+            if verbose:
+                print(f"  All cluster similarities:")
+                for sim in result['all_similarities'][:3]:  # Top 3
+                    cluster_name = sim.get('group_name', f"Cluster_{sim.get('cluster_id', 'Unknown')}")
+                    print(f"    {cluster_name}: {sim['avg_similarity']:.1f}%")
+                print()
+        
+        # Save results
+        print("\nSaving search results...")
+        timestamp = search_results.get('timestamp', 'unknown')
+        
+        # Save to JSON
+        import json
+        from datetime import datetime
+        
+        output_data = {
+            'analysis_date': datetime.now().isoformat(),
+            'input_folder': input_folder,
+            'search_folder': search_folder,
+            'search_threshold': threshold,
+            'existing_groups': len(analyzer.groups),
+            'search_images': len(search_files),
+            'search_results': search_results['search_results']
+        }
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_file = f"{output_dir}/search_results_{timestamp}.json"
+        
+        with open(json_file, 'w') as f:
+            json.dump(output_data, f, indent=2, default=str)
+        
+        print(f"[OK] Results saved to: {json_file}")
+        print("\nSearch completed successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Search failed: {e}")
         if verbose:
             import traceback
             traceback.print_exc()
@@ -370,13 +515,24 @@ def main():
             success = interactive_mode()
             sys.exit(0 if success else 1)
         
+        elif args.search:
+            success = run_search_mode(
+                input_folder=args.folder,
+                search_folder=args.search_folder,
+                output_dir=args.output,
+                threshold=args.threshold,
+                verbose=args.verbose
+            )
+            sys.exit(0 if success else 1)
+        
         else:
             # Normal analysis mode
             success = run_analysis(
                 input_folder=args.folder,
                 output_dir=args.output,
                 threshold=args.threshold,
-                verbose=args.verbose
+                verbose=args.verbose,
+                mode="visual_clustering"  # Use pure visual clustering by default
             )
             sys.exit(0 if success else 1)
     

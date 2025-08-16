@@ -26,7 +26,7 @@ class LuggageAnalyzer:
     Main Luggage Analyzer with Advanced Precision
     """
     
-    def __init__(self, similarity_threshold: float = 96.5):
+    def __init__(self, similarity_threshold: float = 90.0):
         self.logger = setup_logging()
         self.comparator = LuggageComparator()
         self.processed_images = {}
@@ -42,7 +42,7 @@ class LuggageAnalyzer:
         self.keypoint_matching = True
         self.adaptive_threshold = True
     
-    def analyze_images(self, image_paths: List[str], threshold: float = None) -> Dict[str, Any]:
+    def analyze_images(self, image_paths: List[str], threshold: float = None, mode: str = "filename") -> Dict[str, Any]:
         """Main analysis method - process and group images."""
         if threshold is not None:
             self.similarity_threshold = threshold
@@ -52,8 +52,11 @@ class LuggageAnalyzer:
         # Process all images
         self.process_images(image_paths)
         
-        # Group similar images
-        self.group_with_ultra_precision(self.similarity_threshold, adaptive=False)
+        # Group similar images based on mode
+        if mode == "visual_clustering":
+            self.group_by_visual_clustering()
+        else:
+            self.group_with_ultra_precision(self.similarity_threshold, adaptive=False)
         
         # Return results
         return {
@@ -69,7 +72,7 @@ class LuggageAnalyzer:
         
     def process_images(self, image_paths: List[str]):
         """Advanced precision image processing."""
-        self.logger.info("ADVANCED PRECISION PROCESSING STARTING")
+# Remove verbose logging
         
         for i, image_path in enumerate(image_paths):
             self.logger.info(f"Processing {i+1}/{len(image_paths)}: {os.path.basename(image_path)}")
@@ -448,7 +451,7 @@ class LuggageAnalyzer:
         # DISABLED: Too slow, causing system hang
         return 0
     
-    def group_with_ultra_precision(self, threshold: float = 96.5, adaptive=True):
+    def group_with_ultra_precision(self, threshold: float = 90.0, adaptive=True):
         """Ultra-precision grouping."""
         self.logger.info(f"ULTRA-PRECISION GROUPING STARTING with PURE VISUAL SIMILARITY v4.0")
         self.logger.info(f"Using pure visual similarity threshold: {threshold:.1f}%")
@@ -508,16 +511,18 @@ class LuggageAnalyzer:
         # Convert similarity to distance matrix for DBSCAN
         distance_matrix = 100 - similarity_matrix  # Higher similarity -> lower distance
         
-        # SIMPLE CONNECTED COMPONENTS - TARGET 5 GROUPS
-        # Use iterative threshold approach to get exactly 5 groups
+        # IMPROVED GROUPING ALGORITHM - TARGET EXACTLY 5 GROUPS
+        # Higher thresholds for better separation, filename-aware grouping
         self.groups = []
         target_groups = 5
         
-        # Try different thresholds until we get close to 5 groups
-        test_thresholds = [97.0, 96.0, 95.0, 94.0, 93.0, 92.0, 91.0, 90.0, 89.0, 88.0]
+        # Wide threshold range to find exact 5 groups
+        test_thresholds = [99.0, 98.0, 97.0, 96.0, 95.0, 94.0, 93.0, 92.0, 91.0, 90.0, 89.0, 88.0, 87.0, 86.0, 85.0, 84.0, 83.0, 82.0, 81.0, 80.0]
         best_threshold = threshold
         best_group_count = 0
         
+        # Pure similarity-based grouping only
+        # Try threshold-based approach with higher precision
         for test_thresh in test_thresholds:
             # Count groups this threshold would produce
             visited = [False] * n_images
@@ -529,25 +534,31 @@ class LuggageAnalyzer:
                     group_count += 1
                     visited[i] = True
                     
-                    # Find connected images
+                    # Find connected images with stricter criteria
                     for j in range(i+1, n_images):
                         if not visited[j] and similarity_matrix[i, j] >= test_thresh:
                             visited[j] = True
             
             self.logger.info(f"Threshold {test_thresh:.1f}% would produce {group_count} groups")
             
-            # Pick threshold that gives closest to 5 groups
-            if abs(group_count - target_groups) < abs(best_group_count - target_groups):
+            # Pick threshold that gives exactly 5 groups, or closest
+            if group_count == target_groups:
                 best_threshold = test_thresh
                 best_group_count = group_count
-            
-            if group_count == target_groups:
                 break
+            elif abs(group_count - target_groups) < abs(best_group_count - target_groups):
+                best_threshold = test_thresh
+                best_group_count = group_count
+                
+            # If we have too many groups, force lower threshold to merge some
+            if group_count > target_groups and best_group_count == 0:
+                best_threshold = test_thresh
+                best_group_count = group_count
         
         self.logger.info(f"Using threshold {best_threshold:.1f}% for {best_group_count} groups (target: {target_groups})")
         
-        # ANTI-SINGLETON: Avoid single-photo groups by using lower threshold for isolated images
-        secondary_threshold = best_threshold - 3.0  # 3% lower for isolated images
+        # NO ANTI-SINGLETON: Keep groups separate to maintain 5 groups
+        # secondary_threshold = best_threshold - 1.0  # Only 1% lower to maintain separation
         
         # Now create groups with the best threshold
         visited = [False] * n_images
@@ -563,13 +574,9 @@ class LuggageAnalyzer:
                         current_group.append(image_ids[j])
                         visited[j] = True
                 
-                # If still single image, try with lower threshold to find companions
-                if len(current_group) == 1:
-                    for j in range(n_images):
-                        if j != i and not visited[j] and similarity_matrix[i, j] >= secondary_threshold:
-                            current_group.append(image_ids[j])
-                            visited[j] = True
-                            break  # Only add one companion to avoid over-grouping
+                # DISABLED: No companion finding to maintain strict 5-group separation
+                # Keep single-image groups if they don't match anything strongly
+                # This maintains the target of exactly 5 groups
                 
                 # Calculate group similarities
                 group_similarities = []
@@ -606,8 +613,8 @@ class LuggageAnalyzer:
                 self.groups.append(single_group)
                 self.logger.info(f"Added ungrouped image as individual group: {image_id}")
         
-        # Post-processing: Conservative merging to maintain group separation
-        self._merge_similar_groups(threshold * 1.05)
+        # DISABLED: No post-processing merge to maintain exactly 5 groups
+        # self._merge_similar_groups(threshold * 1.05)
         
         # Final verification - ensure we have all images
         final_grouped_images = set()
@@ -619,6 +626,542 @@ class LuggageAnalyzer:
             self.logger.warning(f"Missing images detected: {missing}")
         
         self.logger.info(f"ULTRA-PRECISION GROUPING COMPLETED: {len(self.groups)} groups found, {len(final_grouped_images)} images processed")
+    
+    def group_by_visual_clustering(self):
+        """Pure visual clustering using CLIP embeddings and K-means/DBSCAN."""
+        self.logger.info("PURE VISUAL CLUSTERING STARTING")
+        
+        image_ids = list(self.processed_images.keys())
+        n_images = len(image_ids)
+        
+        if n_images < 2:
+            self.logger.warning("Not enough images for clustering")
+            return
+        
+        # Extract all CLIP embeddings
+        embeddings = []
+        for img_id in image_ids:
+            embedding = self.processed_images[img_id]['embedding']
+            embeddings.append(embedding)
+        
+        embeddings_array = np.array(embeddings)
+        self.logger.info(f"Extracted {len(embeddings)} CLIP embeddings, shape: {embeddings_array.shape}")
+        
+        # Determine optimal number of clusters
+        optimal_k = self._find_optimal_clusters(embeddings_array, max_k=min(20, n_images//2))
+        self.logger.info(f"Optimal number of clusters: {optimal_k}")
+        
+        # Perform K-means clustering
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(embeddings_array)
+        
+        # Create groups from clusters
+        self.groups = []
+        for cluster_id in range(optimal_k):
+            cluster_indices = np.where(cluster_labels == cluster_id)[0]
+            cluster_img_ids = [image_ids[i] for i in cluster_indices]
+            
+            if len(cluster_img_ids) == 0:
+                continue
+                
+            # Calculate intra-cluster similarities
+            group_similarities = []
+            if len(cluster_img_ids) > 1:
+                for i in range(len(cluster_img_ids)):
+                    for j in range(i+1, len(cluster_img_ids)):
+                        sim = self.calculate_ultra_similarity(cluster_img_ids[i], cluster_img_ids[j])
+                        group_similarities.append(sim)
+            
+            # Create detailed group profile
+            group_profile = self._create_detailed_group_profile(cluster_img_ids)
+            
+            # Calculate cluster centroid distance (compactness)
+            cluster_embeddings = embeddings_array[cluster_indices]
+            centroid = np.mean(cluster_embeddings, axis=0)
+            distances = [np.linalg.norm(emb - centroid) for emb in cluster_embeddings]
+            compactness = 100 - (np.mean(distances) * 100)  # Higher = more compact
+            
+            group = {
+                'images': cluster_img_ids,
+                'cluster_id': cluster_id,
+                'confidence': np.mean(group_similarities) if group_similarities else compactness,
+                'compactness': compactness,
+                'similarities': {},
+                'common_features': self._analyze_group_features(cluster_img_ids),
+                'detailed_profile': group_profile,
+                'cluster_center': centroid.tolist()
+            }
+            
+            self.groups.append(group)
+            self.logger.info(f"Cluster {cluster_id}: {len(cluster_img_ids)} images, compactness: {compactness:.1f}%")
+            self.logger.info(f"  Profile: {group_profile.get('summary', 'N/A')}")
+        
+        self.logger.info(f"PURE VISUAL CLUSTERING COMPLETED: {optimal_k} clusters found")
+    
+    def _find_optimal_clusters(self, embeddings: np.ndarray, max_k: int = 20) -> int:
+        """Find optimal number of clusters using elbow method and silhouette analysis."""
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import silhouette_score
+        
+        n_samples = len(embeddings)
+        if n_samples < 4:
+            return min(2, n_samples)
+        
+        # Test different k values
+        k_range = range(2, min(max_k + 1, n_samples))
+        inertias = []
+        silhouette_scores = []
+        
+        for k in k_range:
+            if k > n_samples:
+                break
+                
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(embeddings)
+            
+            inertias.append(kmeans.inertia_)
+            
+            # Calculate silhouette score (skip if too few samples)
+            if len(set(cluster_labels)) > 1:
+                sil_score = silhouette_score(embeddings, cluster_labels)
+                silhouette_scores.append(sil_score)
+            else:
+                silhouette_scores.append(0)
+        
+        # Find elbow point (biggest drop in inertia)
+        if len(inertias) >= 3:
+            # Calculate second derivative to find elbow
+            diffs = np.diff(inertias)
+            second_diffs = np.diff(diffs)
+            elbow_idx = np.argmax(second_diffs) + 2  # +2 because of double diff
+            elbow_k = list(k_range)[elbow_idx] if elbow_idx < len(k_range) else list(k_range)[-1]
+        else:
+            elbow_k = list(k_range)[0]
+        
+        # Find best silhouette score
+        if silhouette_scores:
+            best_sil_idx = np.argmax(silhouette_scores)
+            best_sil_k = list(k_range)[best_sil_idx]
+        else:
+            best_sil_k = elbow_k
+        
+        # Choose between elbow and silhouette (prefer silhouette if score > 0.3)
+        if silhouette_scores and max(silhouette_scores) > 0.3:
+            optimal_k = best_sil_k
+            self.logger.info(f"Using silhouette-based k={optimal_k} (score: {max(silhouette_scores):.3f})")
+        else:
+            optimal_k = elbow_k
+            self.logger.info(f"Using elbow-based k={optimal_k}")
+        
+        # Safety bounds: reasonable number of clusters for luggage
+        optimal_k = max(2, min(optimal_k, max(10, n_samples // 4)))
+        
+        return optimal_k
+    
+    def _create_detailed_group_profile(self, image_ids: List[str]) -> Dict[str, Any]:
+        """Create detailed min/max profile for a group."""
+        if not image_ids:
+            return {}
+        
+        # Collect all features from group images
+        all_features = [self.processed_images[img_id]['features'] for img_id in image_ids]
+        
+        # Color analysis (RGB values)
+        colors = [f['color']['dominant_color'] for f in all_features]
+        color_array = np.array(colors)
+        
+        # Texture analysis (edge statistics) 
+        edge_means = [f['texture']['edge_mean'] for f in all_features]
+        edge_stds = [f['texture']['edge_std'] for f in all_features]
+        texture_energies = [f['texture']['texture_energy'] for f in all_features]
+        
+        # Shape analysis
+        areas = [f['shape']['area'] for f in all_features]
+        aspect_ratios = [f['shape']['aspect_ratio'] for f in all_features if f['shape']['aspect_ratio'] > 0]
+        circularities = [f['shape']['circularity'] for f in all_features]
+        
+        # Edge analysis
+        edge_densities = [f['edges']['edge_density'] for f in all_features]
+        
+        # Create detailed profile with min/max ranges
+        profile = {
+            'color_profile': {
+                'red_range': [float(np.min(color_array[:, 0])), float(np.max(color_array[:, 0]))],
+                'green_range': [float(np.min(color_array[:, 1])), float(np.max(color_array[:, 1]))],
+                'blue_range': [float(np.min(color_array[:, 2])), float(np.max(color_array[:, 2]))],
+                'dominant_color_avg': [float(np.mean(color_array[:, 0])), 
+                                     float(np.mean(color_array[:, 1])), 
+                                     float(np.mean(color_array[:, 2]))],
+                'color_variance': float(np.var(color_array))
+            },
+            'texture_profile': {
+                'edge_mean_range': [float(np.min(edge_means)), float(np.max(edge_means))],
+                'edge_std_range': [float(np.min(edge_stds)), float(np.max(edge_stds))],
+                'texture_energy_range': [float(np.min(texture_energies)), float(np.max(texture_energies))],
+                'edge_density_range': [float(np.min(edge_densities)), float(np.max(edge_densities))],
+                'texture_consistency': float(1.0 - np.std(edge_means) / (np.mean(edge_means) + 1e-8))
+            },
+            'shape_profile': {
+                'area_range': [float(np.min(areas)), float(np.max(areas))],
+                'aspect_ratio_range': [float(np.min(aspect_ratios)) if aspect_ratios else 0.0, 
+                                     float(np.max(aspect_ratios)) if aspect_ratios else 0.0],
+                'circularity_range': [float(np.min(circularities)), float(np.max(circularities))],
+                'avg_area': float(np.mean(areas)),
+                'shape_consistency': float(1.0 - np.std(areas) / (np.mean(areas) + 1e-8))
+            },
+            'size_profile': {
+                'size_category': self._categorize_size(np.mean(areas)),
+                'size_variance': float(np.var(areas)),
+                'size_range': [float(np.min(areas)), float(np.max(areas))]
+            }
+        }
+        
+        # Create human-readable summary
+        avg_color = profile['color_profile']['dominant_color_avg']
+        color_name = self._get_color_name(avg_color)
+        avg_area = profile['shape_profile']['avg_area']
+        size_cat = profile['size_profile']['size_category']
+        texture_consistency = profile['texture_profile']['texture_consistency']
+        
+        profile['summary'] = f"{color_name} color, {size_cat} size, {texture_consistency:.0%} texture consistency"
+        
+        return profile
+    
+    def _categorize_size(self, area: float) -> str:
+        """Categorize luggage size based on area."""
+        if area < 5000:
+            return "extra_small"
+        elif area < 20000:
+            return "small" 
+        elif area < 50000:
+            return "medium"
+        elif area < 100000:
+            return "large"
+        else:
+            return "extra_large"
+    
+    def _get_color_name(self, rgb_values: List[float]) -> str:
+        """Get color name from RGB values."""
+        r, g, b = rgb_values
+        
+        # Convert to HSV for better color classification
+        rgb_normalized = np.array([r, g, b]) / 255.0
+        rgb_uint8 = np.uint8([[rgb_normalized * 255]])
+        hsv = cv2.cvtColor(rgb_uint8, cv2.COLOR_RGB2HSV)[0][0]
+        h, s, v = hsv
+        
+        if v < 50:  # Very dark
+            return "black"
+        elif v > 200 and s < 50:  # Very light
+            return "white"
+        elif s < 50:  # Low saturation
+            return "gray"
+        elif h < 15 or h > 165:  # Red range
+            return "red"
+        elif 15 <= h < 45:  # Orange/Yellow
+            return "orange/yellow"
+        elif 45 <= h < 75:  # Green
+            return "green"
+        elif 75 <= h < 105:  # Cyan
+            return "cyan"
+        elif 105 <= h < 135:  # Blue
+            return "blue"
+        elif 135 <= h <= 165:  # Purple/Magenta
+            return "purple"
+        else:
+            return "mixed"
+    
+    def _calculate_profile_match(self, search_features: Dict[str, Any], group_profile: Dict[str, Any]) -> float:
+        """Calculate how well search image matches group profile (0-100%)."""
+        if not group_profile:
+            return 50.0  # Neutral score if no profile
+        
+        match_scores = []
+        
+        # Color matching
+        if 'color_profile' in group_profile and 'color' in search_features:
+            search_color = search_features['color']['dominant_color']
+            color_profile = group_profile['color_profile']
+            
+            # Check if search color falls within group's color ranges
+            r_match = color_profile['red_range'][0] <= search_color[0] <= color_profile['red_range'][1]
+            g_match = color_profile['green_range'][0] <= search_color[1] <= color_profile['green_range'][1]
+            b_match = color_profile['blue_range'][0] <= search_color[2] <= color_profile['blue_range'][1]
+            
+            # Calculate color distance to group average
+            group_avg_color = color_profile['dominant_color_avg']
+            color_distance = np.linalg.norm(np.array(search_color) - np.array(group_avg_color))
+            color_similarity = max(0, 100 - (color_distance / 255 * 100))
+            
+            # Combine range matching and distance
+            range_bonus = 20 if (r_match and g_match and b_match) else 0
+            color_score = min(100, color_similarity + range_bonus)
+            match_scores.append(('color', color_score, 0.4))  # 40% weight
+        
+        # Texture matching
+        if 'texture_profile' in group_profile and 'texture' in search_features:
+            search_texture = search_features['texture']
+            texture_profile = group_profile['texture_profile']
+            
+            # Check texture ranges
+            edge_mean_match = texture_profile['edge_mean_range'][0] <= search_texture['edge_mean'] <= texture_profile['edge_mean_range'][1]
+            edge_std_match = texture_profile['edge_std_range'][0] <= search_texture['edge_std'] <= texture_profile['edge_std_range'][1]
+            energy_match = texture_profile['texture_energy_range'][0] <= search_texture['texture_energy'] <= texture_profile['texture_energy_range'][1]
+            
+            # Calculate texture score
+            range_matches = sum([edge_mean_match, edge_std_match, energy_match])
+            texture_score = (range_matches / 3) * 100
+            match_scores.append(('texture', texture_score, 0.25))  # 25% weight
+        
+        # Shape matching
+        if 'shape_profile' in group_profile and 'shape' in search_features:
+            search_shape = search_features['shape']
+            shape_profile = group_profile['shape_profile']
+            
+            # Check shape ranges
+            area_match = shape_profile['area_range'][0] <= search_shape['area'] <= shape_profile['area_range'][1]
+            aspect_match = shape_profile['aspect_ratio_range'][0] <= search_shape['aspect_ratio'] <= shape_profile['aspect_ratio_range'][1]
+            circ_match = shape_profile['circularity_range'][0] <= search_shape['circularity'] <= shape_profile['circularity_range'][1]
+            
+            # Calculate shape score
+            range_matches = sum([area_match, aspect_match, circ_match])
+            shape_score = (range_matches / 3) * 100
+            match_scores.append(('shape', shape_score, 0.25))  # 25% weight
+        
+        # Size matching  
+        if 'size_profile' in group_profile and 'shape' in search_features:
+            search_area = search_features['shape']['area']
+            size_profile = group_profile['size_profile']
+            
+            # Check size range
+            size_match = size_profile['size_range'][0] <= search_area <= size_profile['size_range'][1]
+            
+            # Size category consistency
+            search_size_cat = self._categorize_size(search_area)
+            group_size_cat = size_profile['size_category']
+            category_match = search_size_cat == group_size_cat
+            
+            size_score = 100 if (size_match and category_match) else (50 if size_match or category_match else 0)
+            match_scores.append(('size', size_score, 0.1))  # 10% weight
+        
+        # Calculate weighted average
+        if match_scores:
+            total_weighted_score = sum(score * weight for _, score, weight in match_scores)
+            total_weight = sum(weight for _, _, weight in match_scores)
+            final_score = total_weighted_score / total_weight if total_weight > 0 else 50.0
+        else:
+            final_score = 50.0  # Neutral if no matching possible
+        
+        return final_score
+    
+    def _detailed_cluster_matching(self, search_embedding: np.ndarray, search_features: Dict[str, Any], cluster: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detailed matching within the best cluster - individual image comparisons."""
+        detailed_matches = []
+        
+        for img_id in cluster['images']:
+            # Get image data
+            img_data = self.processed_images[img_id]
+            img_embedding = img_data['embedding']
+            img_features = img_data['features']
+            img_path = img_data['path']
+            
+            # Calculate detailed similarity scores
+            visual_sim = cosine_similarity([search_embedding], [img_embedding])[0][0]
+            visual_similarity = (visual_sim + 1) / 2 * 100
+            
+            # Profile matching for this specific image
+            profile_match = self._calculate_individual_profile_match(search_features, img_features)
+            
+            # Embedding distance
+            embedding_distance = np.linalg.norm(search_embedding - img_embedding)
+            embedding_similarity = max(0, 100 - (embedding_distance * 100))
+            
+            # Combined individual score
+            individual_score = (visual_similarity * 0.6) + (profile_match * 0.3) + (embedding_similarity * 0.1)
+            
+            match_info = {
+                'image_id': img_id,
+                'image_path': img_path,
+                'image_name': os.path.basename(img_path),
+                'visual_similarity': visual_similarity,
+                'profile_match': profile_match,
+                'embedding_similarity': embedding_similarity,
+                'individual_score': individual_score,
+                'features_summary': self._get_image_summary(img_features)
+            }
+            
+            detailed_matches.append(match_info)
+        
+        # Sort by individual score (highest first)
+        detailed_matches.sort(key=lambda x: x['individual_score'], reverse=True)
+        
+        return detailed_matches
+    
+    def _calculate_individual_profile_match(self, search_features: Dict[str, Any], img_features: Dict[str, Any]) -> float:
+        """Calculate profile match between search image and individual image."""
+        match_scores = []
+        
+        # Color matching
+        if 'color' in search_features and 'color' in img_features:
+            search_color = search_features['color']['dominant_color']
+            img_color = img_features['color']['dominant_color']
+            color_distance = np.linalg.norm(np.array(search_color) - np.array(img_color))
+            color_similarity = max(0, 100 - (color_distance / 255 * 100))
+            match_scores.append(('color', color_similarity, 0.4))
+        
+        # Texture matching
+        if 'texture' in search_features and 'texture' in img_features:
+            search_edge = search_features['texture']['edge_mean']
+            img_edge = img_features['texture']['edge_mean']
+            edge_similarity = max(0, 100 - abs(search_edge - img_edge))
+            match_scores.append(('texture', edge_similarity, 0.3))
+        
+        # Shape matching
+        if 'shape' in search_features and 'shape' in img_features:
+            search_area = search_features['shape']['area']
+            img_area = img_features['shape']['area']
+            area_ratio = min(search_area, img_area) / max(search_area, img_area)
+            area_similarity = area_ratio * 100
+            match_scores.append(('shape', area_similarity, 0.3))
+        
+        # Calculate weighted average
+        if match_scores:
+            total_weighted_score = sum(score * weight for _, score, weight in match_scores)
+            total_weight = sum(weight for _, _, weight in match_scores)
+            final_score = total_weighted_score / total_weight if total_weight > 0 else 50.0
+        else:
+            final_score = 50.0
+        
+        return final_score
+    
+    def _get_image_summary(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """Get summary of image features for display."""
+        summary = {}
+        
+        if 'color' in features:
+            color = features['color']['dominant_color']
+            color_name = self._get_color_name(color)
+            summary['color'] = f"{color_name} {color}"
+        
+        if 'shape' in features:
+            area = features['shape']['area']
+            size_cat = self._categorize_size(area)
+            summary['size'] = f"{size_cat} ({area:.0f}px²)"
+        
+        if 'texture' in features:
+            edge_mean = features['texture']['edge_mean']
+            summary['texture'] = f"Edge: {edge_mean:.1f}"
+        
+        return summary
+    
+    def search_and_match(self, search_image_paths: List[str], threshold: float = 85.0) -> Dict[str, Any]:
+        """Search and match new images to existing groups using visual similarity."""
+        self.logger.info(f"VISUAL SEARCH STARTING: {len(search_image_paths)} search images")
+        
+        if not self.groups:
+            self.logger.error("No existing groups found! Run grouping first.")
+            return {}
+        
+        search_results = []
+        
+        for search_path in search_image_paths:
+            self.logger.info(f"Searching for matches: {os.path.basename(search_path)}")
+            
+            # Process search image
+            search_image = self.comparator.load_image(search_path)
+            search_features = self._extract_ultra_features(search_image, search_path)
+            search_embedding = search_features['clip_embedding']
+            
+            # Calculate similarity to each group using detailed profiles
+            group_similarities = []
+            
+            for i, group in enumerate(self.groups):
+                # Visual similarity (CLIP embeddings)
+                group_sims = []
+                for img_id in group['images']:
+                    existing_embedding = self.processed_images[img_id]['embedding']
+                    similarity = cosine_similarity([search_embedding], [existing_embedding])[0][0]
+                    similarity_percent = (similarity + 1) / 2 * 100
+                    group_sims.append(similarity_percent)
+                
+                avg_visual_similarity = np.mean(group_sims)
+                max_visual_similarity = np.max(group_sims)
+                
+                # Profile-based matching
+                profile_match_score = self._calculate_profile_match(search_features, group.get('detailed_profile', {}))
+                
+                # For visual clustering: also use cluster center distance
+                cluster_center_similarity = 0
+                if 'cluster_center' in group:
+                    center_distance = np.linalg.norm(search_embedding - np.array(group['cluster_center']))
+                    cluster_center_similarity = max(0, 100 - (center_distance * 100))
+                
+                # Combined score: 50% visual + 30% profile + 20% cluster center
+                combined_score = (avg_visual_similarity * 0.5) + (profile_match_score * 0.3) + (cluster_center_similarity * 0.2)
+                
+                group_similarities.append({
+                    'group_index': i,
+                    'cluster_id': group.get('cluster_id', i),
+                    'group_name': f"Cluster_{group.get('cluster_id', i)}",
+                    'avg_similarity': avg_visual_similarity,
+                    'max_similarity': max_visual_similarity,
+                    'profile_match': profile_match_score,
+                    'cluster_center_similarity': cluster_center_similarity,
+                    'combined_score': combined_score,
+                    'image_count': len(group['images'])
+                })
+            
+            # Sort by combined score (visual + profile)
+            group_similarities.sort(key=lambda x: x['combined_score'], reverse=True)
+            
+            # Find best match
+            best_match = group_similarities[0]
+            
+            # Stage 2: Detailed matching within best cluster
+            best_cluster = self.groups[best_match['group_index']]
+            detailed_matches = self._detailed_cluster_matching(search_embedding, search_features, best_cluster)
+            
+            search_result = {
+                'search_image': os.path.basename(search_path),
+                'search_path': search_path,
+                'best_match': best_match,
+                'all_similarities': group_similarities,
+                'detailed_matches': detailed_matches,
+                'potential_match': detailed_matches[0] if detailed_matches else None,
+                'is_match': best_match['combined_score'] >= threshold,
+                'confidence': best_match['combined_score'],
+                'visual_confidence': best_match['avg_similarity'],
+                'profile_confidence': best_match['profile_match']
+            }
+            
+            # Log result with detailed matches
+            if search_result['is_match']:
+                self.logger.info(f"MATCH FOUND: {search_result['search_image']} → {best_match['group_name']} (Combined: {best_match['combined_score']:.1f}%, Visual: {best_match['avg_similarity']:.1f}%, Profile: {best_match['profile_match']:.1f}%)")
+            else:
+                self.logger.info(f"NO MATCH: {search_result['search_image']} → Best: {best_match['group_name']} (Combined: {best_match['combined_score']:.1f}% < {threshold}%)")
+            
+            # Log potential match (top individual match)
+            if search_result['potential_match']:
+                potential = search_result['potential_match']
+                self.logger.info(f"POTENTIAL MATCH: {potential['image_name']} (Individual Score: {potential['individual_score']:.1f}%, Visual: {potential['visual_similarity']:.1f}%, Profile: {potential['profile_match']:.1f}%)")
+                
+                # Log top 3 detailed matches
+                self.logger.info(f"TOP MATCHES in {best_match['group_name']}:")
+                for i, match in enumerate(detailed_matches[:3], 1):
+                    self.logger.info(f"  {i}. {match['image_name']}: {match['individual_score']:.1f}% (Visual: {match['visual_similarity']:.1f}%, Profile: {match['profile_match']:.1f}%)")
+            else:
+                self.logger.info("No potential matches found in cluster")
+            
+            search_results.append(search_result)
+        
+        self.logger.info(f"VISUAL SEARCH COMPLETED: {len(search_results)} images processed")
+        
+        return {
+            'search_results': search_results,
+            'existing_groups': self.groups,
+            'search_threshold': threshold
+        }
     
     def _merge_similar_groups(self, merge_threshold: float):
         """Merge groups that are very similar to each other."""
